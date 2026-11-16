@@ -442,11 +442,22 @@ def t_material(slug: str, d: Path, enc: dict) -> dict:
             buenas.append({**x, "n": int(x["n"]), "marca": ok["marca"]})
         else:
             malas += 1
-    if "INSUFICIENTE" in str(m.get("veredicto", "")).upper():
-        return {"fallo": f"material insuficiente para este vídeo. Propuesta: {m.get('propuesta') or 'sin propuesta'}"}
+    # Si da para un vídeo lo decide una cuenta, no una opinión: las palabras útiles tienen que llegar a un porcentaje
+    # del guion más corto que admite el canal. Un guion desarrolla su material, pero no puede salir de la nada.
+    r = R.reglas(C.leer(slug))
+    pct = int(r.get("material_min_pct") or 50)
+    minimo = r["ppm"] * r["minutos"][0] * pct // 100
+    try:
+        utiles = int(m.get("palabras_utiles") or 0)
+    except (TypeError, ValueError):
+        utiles = 0
     if len(buenas) < 6:
         return {"fallo": f"solo {len(buenas)} piezas de material con cita comprobada ({malas} sin ella): no da para un guion"}
-    _guardar(d / "material.json", {**m, "material": buenas, "sin_cita": malas})
+    if utiles < minimo:
+        return {"fallo": f"material insuficiente: {utiles} palabras útiles y hacen falta {minimo} (el {pct} % de un guion "
+                         f"de {r['minutos'][0]} minutos). Propuesta: {m.get('propuesta') or 'sin propuesta'}"}
+    justo = utiles < r["ppm"] * r["minutos"][0]
+    _guardar(d / "material.json", {**m, "veredicto": "SUFICIENTE", "material": buenas, "sin_cita": malas, "material_justo": justo})
     return {"resumen": f"{len(buenas)} piezas de material" + (f"; {malas} descartadas por cita no literal" if malas else "")}
 
 

@@ -93,11 +93,13 @@ caso "elección sin opciones previas: el título es el tema del encargo" '
 S.p_eleccion("cocina", d, {"params": {"tema": "Arroz suelto en casa"}}); assert lee("eleccion.json")["titulo"] == "Arroz suelto en casa"'
 caso "material: se quedan las piezas con cita comprobada; pocas o insuficiente, falla" '
 pz = lambda n, cita: {"n": n, "fuente": "charlas/v01", "tipo": "caso", "para": "explicacion", "cita": cita, "dicho": "x"}
-deja("material.json", {"veredicto": "SUFICIENTE", "material": [pz(i, CITA1 if i % 2 else CITA2) for i in range(1, 8)] + [pz(9, "esto no está en la fuente por ningún lado, de verdad")]})
+C.config("cocina", "reglas.minutos", [10, 12]); C.config("cocina", "reglas.ppm", 100); C.config("cocina", "reglas.material_min_pct", 40)   # hacen falta 400
+deja("material.json", {"veredicto": "MATERIAL INSUFICIENTE", "palabras_utiles": 450, "material": [pz(i, CITA1 if i % 2 else CITA2) for i in range(1, 8)] + [pz(9, "esto no está en la fuente por ningún lado, de verdad")]})
 r = S.t_material("cocina", d, {}); m = lee("material.json"); assert len(m["material"]) == 7 and m["sin_cita"] == 1 and "1 descartadas" in r["resumen"], r
-deja("material.json", {"veredicto": "SUFICIENTE", "material": [pz(1, CITA1)]}); assert "no da para un guion" in S.t_material("cocina", d, {})["fallo"]
-deja("material.json", {"veredicto": "MATERIAL INSUFICIENTE", "propuesta": "fusionar con el del sofrito", "material": [pz(i, CITA1) for i in range(1, 8)]})
-assert "fusionar" in S.t_material("cocina", d, {})["fallo"]'
+assert m["veredicto"] == "SUFICIENTE" and m["material_justo"] is True   # lo decide la cuenta, no la opinión del agente
+deja("material.json", {"veredicto": "SUFICIENTE", "palabras_utiles": 5000, "material": [pz(1, CITA1)]}); assert "no da para un guion" in S.t_material("cocina", d, {})["fallo"]
+deja("material.json", {"veredicto": "SUFICIENTE", "palabras_utiles": 390, "propuesta": "fusionar con el del sofrito", "material": [pz(i, CITA1) for i in range(1, 8)]})
+f = S.t_material("cocina", d, {})["fallo"]; assert "fusionar" in f and "390" in f and "400" in f, f'
 GUION='## intro\nEl arroz no se pasa por el tiempo. Se pasa por el agua.\n## desarrollo-1\nPrimero mides el agua.[1] Después esperas.\nSiete de cada diez se pasan.[2]\n## reenganche-1\nY ahora el fallo.\n## conexion\nEn un restaurante dejamos de tirar arroz.[2]\n## reenganche-2\nQueda el reposo.\n## desarrollo-2\nEl reposo cierra el grano. Diez minutos tapado. Y no levantes la tapa antes de tiempo.\n## cierre\nEso es el agua.\nLa otra mitad es el fuego.\n'
 caso "datos: la lista a verificar sale de la verificación y conserva lo ya decidido" '
 deja("verificacion.json", {"veredicto": "CAMBIOS", "cambios": [{"bloque": "intro", "frase": "x", "motivo": "y", "quedaria": "z"}], "datos": [{"dato": "siete de cada diez", "frase": "Siete de cada diez se pasan.", "motivo": "contradiccion", "versiones": ["siete", "ocho"]}]})

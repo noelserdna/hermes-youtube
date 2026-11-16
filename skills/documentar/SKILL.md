@@ -42,10 +42,13 @@ lo que tú dejes pasar.
    - `para`: para qué sirve en el guion (`gancho`, `problema`, `explicacion`, `analogia`, `caso`, `conexion`,
      `dato`, `objecion`).
 5. Las cifras y los datos que se contradicen entre fuentes van a `dudosos`, con todas sus versiones. No elijas tú.
-6. Cuenta las `palabras_utiles`: lo que se puede contar con este material sin repetirse ni rellenar.
-7. `veredicto`: `SUFICIENTE` si llega al mínimo de palabras de un guion del canal; si no, `MATERIAL INSUFICIENTE` y
-   una `propuesta`: fusionar con otro tema (di cuál), acortar el vídeo, o qué habría que pedirle a quien presenta
-   para completarlo. Con material insuficiente no se escribe el guion: es preferible a rellenar o inventar.
+6. Cuenta las `palabras_utiles`: las palabras de material limpio que se pueden contar sin repetirse. Cuenta con
+   honradez; no redondees hacia arriba. Si el material da para un vídeo lo decide después un programa con esa cifra
+   y las reglas del canal.
+7. `veredicto`: `SUFICIENTE` si crees que hay vídeo; `MATERIAL INSUFICIENTE` si no. En los dos casos, cuando el
+   material vaya justo, escribe una `propuesta` concreta: con qué otro tema se podría fusionar (di cuál), o qué
+   habría que pedirle a quien presenta para completarlo (qué preguntas debería responder). Es preferible no escribir
+   un guion a rellenarlo o inventar.
 
 ## Formato de salida (`material.json`)
 

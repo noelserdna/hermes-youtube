@@ -30,6 +30,9 @@ Lee además `referencias/retencion.md` y `referencias/ganchos.json`.
 ## Procedimiento
 
 1. Lee `eleccion.json` (título, miniatura y promesa) y `material.json`. Solo cuentas con ese material.
+   Si `material.json` dice `material_justo`, hay menos material que palabras tiene el guion: desarrolla cada pieza
+   (el problema que resuelve, la objeción, el ejemplo) en lugar de añadir afirmaciones nuevas, y no repitas una
+   pieza para llenar.
 2. Calcula el presupuesto: las palabras totales salen de los minutos y del ritmo de lectura de las reglas del canal;
    la intro no pasa de `intro_max_palabras`.
 3. Define la **intro**: la promesa (reafirma el título), la promesa extra, la prueba de autoridad (un hecho del

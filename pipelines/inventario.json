@@ -11,7 +11,7 @@
       "titulo": "Inventario de {fuente}",
       "perfil": "yt-analista",
       "skill": "inventario",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "60m",
       "salida": "piezas.json",
       "prepara": [

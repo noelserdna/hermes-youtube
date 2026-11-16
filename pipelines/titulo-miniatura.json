@@ -28,7 +28,7 @@
       "titulo": "Títulos: {tema}",
       "perfil": "yt-titulador",
       "skill": "titular",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "15m",
       "salida": "titulos.json"
     },

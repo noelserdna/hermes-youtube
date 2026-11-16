@@ -13,7 +13,7 @@
       "titulo": "Documentar: {tema}",
       "perfil": "yt-investigador",
       "skill": "documentar",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "15m",
       "salida": "material.json",
       "prepara": [
@@ -31,7 +31,7 @@
       "titulo": "Escaleta: {tema}",
       "perfil": "yt-guionista",
       "skill": "escaleta",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "10m",
       "salida": "escaleta.json",
       "prepara": [
@@ -43,7 +43,7 @@
       "titulo": "Escribir el guion: {tema}",
       "perfil": "yt-guionista",
       "skill": "escribir-guion",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "20m",
       "salida": "guion.md"
     },
@@ -73,7 +73,7 @@
       "titulo": "Crítica de voz: {tema}",
       "perfil": "yt-doble",
       "skill": "voz",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "10m",
       "salida": "voz.json"
     },
@@ -82,7 +82,7 @@
       "titulo": "Ajustar el guion: {tema}",
       "perfil": "yt-guionista",
       "skill": "ajustar",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "10m",
       "salida": "ajustes-aplicados.json",
       "prepara": [

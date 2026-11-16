@@ -26,7 +26,7 @@ falta=()
 for c in jq rsync git python3; do command -v "$c" >/dev/null || falta+=("$c"); done
 command -v "$HERMES" >/dev/null || [ -x "$HERMES" ] || falta+=(hermes)
 [ ${#falta[@]} -eq 0 ] || { echo "Faltan: ${falta[*]}" >&2; exit 1; }
-command -v claude >/dev/null || [ -x "$HOME/.npm-global/bin/claude" ] || echo "AVISO: no encuentro Claude Code: las etapas con ejecutor «claude» fallarán"
+command -v claude >/dev/null || [ -x "$HOME/.npm-global/bin/claude" ] || echo "Nota: no hay Claude Code en esta máquina; solo hace falta si un canal pone el ejecutor «claude» en alguna etapa"
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' || { echo "Hace falta python3 >= 3.9" >&2; exit 1; }
 
 VERSION=$(sed -nE 's/^version: *//p' "$ROOT/plugin/hermes-youtube/plugin.yaml")

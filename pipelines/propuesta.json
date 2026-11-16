@@ -9,7 +9,7 @@
       "titulo": "Generar candidatos de tema",
       "perfil": "yt-estratega",
       "skill": "generar-temas",
-      "ejecutor": "claude",
+      "ejecutor": "hermes",
       "max_runtime": "30m",
       "salida": "candidatos.json",
       "prepara": [

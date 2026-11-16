@@ -1,0 +1,15 @@
+# Material de cada canal: nunca va al repositorio
+fuentes/
+privado/
+canales/
+
+# Secretos
+secretos.env
+*.env
+
+# Sistema y herramientas
+.DS_Store
+node_modules/
+__pycache__/
+*.pyc
+*.log

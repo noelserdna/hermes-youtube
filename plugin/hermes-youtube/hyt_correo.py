@@ -310,11 +310,14 @@ def _datos_lineas(datos: list, solo_pendientes: bool = False) -> list:
 
 
 def _cambios(d: Path) -> dict | None:
-    """Qué frases han cambiado respecto a la versión anterior del guion (la última copia de antes de un ajuste)."""
-    antes = sorted((d / ".estado").glob("guion-antes-*.md"), key=lambda f: int(re.sub(r"\D", "", f.stem) or 0)) if (d / ".estado").is_dir() else []
-    if not antes or not (d / "guion.md").exists():
+    """Qué frases han cambiado respecto a la última versión que vio una persona. Cada vez que se monta el paquete se
+    guarda el guion tal como se presenta; los retoques internos de antes de la primera revisión no son «cambios»."""
+    vistos = sorted((d / ".estado").glob("guion-presentado-*.md"), key=lambda f: int(re.sub(r"\D", "", f.stem) or 0)) \
+        if (d / ".estado").is_dir() else []
+    if len(vistos) < 2:
         return None
-    return _cargar("hyt_texto").cambios(_lee(antes[-1]), _lee(d / "guion.md"))
+    c = _cargar("hyt_texto").cambios(_lee(vistos[-2]), _lee(vistos[-1]))
+    return c if c["nuevas"] or c["quitadas"] else None
 
 
 def _c_revision(p: dict, doc: Doc) -> None:
@@ -325,9 +328,10 @@ def _c_revision(p: dict, doc: Doc) -> None:
         return
     if int(p.get("ronda") or 0) or (d / ".estado").is_dir():
         c = _cambios(d)
-        if c and c["nuevas"]:
+        if c:
             doc.titulo(f"Lo que ha cambiado desde la versión anterior ({c['pct']} % de las frases)")
-            doc.lista([f"Frase {n}: {f}" for n, f in c["nuevas"][:40]])
+            doc.lista([f"Frase {n}: {f}" for n, f in c["nuevas"][:40]]
+                      + [f"Quitada: {f}" for f in c["quitadas"][:40] if not any(f == x for _, x in c["nuevas"])])
     doc.titulo("Título")
     doc.parrafo(paq.get("titulo") or "(sin título elegido)", fuerte=True)
     if paq.get("promesa"):

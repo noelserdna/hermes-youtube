@@ -578,6 +578,12 @@ def t_paquete(slug: str, d: Path, enc: dict) -> dict:
     el = _json(d / "eleccion.json", {}) or {}
     cierre = _json(d / "cierre.json", {}) or {}
     avisos = revisar_paquete(slug, d)
+    est = d / ".estado"                      # el guion tal como se presenta esta vez: contra él se compara la siguiente
+    est.mkdir(exist_ok=True)
+    n = len(list(est.glob("guion-presentado-*.md"))) + 1
+    ultimo = est / f"guion-presentado-{n - 1}.md"
+    if n == 1 or ultimo.read_text(encoding="utf-8") != guion:
+        (est / f"guion-presentado-{n}.md").write_text(guion, encoding="utf-8")
     (d / "guion-limpio.txt").write_text(limpio(guion), encoding="utf-8")
     (d / "guion-numerado.md").write_text(numerado(guion), encoding="utf-8")
     medido = int(r.get("ppm_medido") or 0)

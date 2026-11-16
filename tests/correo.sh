@@ -196,7 +196,7 @@ print(eid, file=open(T / "final", "w"))
 '
 caso "revisión final: va a quien presenta, con las frases que han cambiado; su RECHAZAR (con ventana) se notifica a marketing con el motivo" '
 eid = open(T / "final").read().strip(); d = E.carpeta("demo", eid)
-(d / ".estado").mkdir(exist_ok=True); (d / ".estado/guion-antes-1.md").write_text("## intro\nEl arroz no se pasa por el tiempo. Se pasa por el caldo.\n## desarrollo-1\nMide el agua antes de encender el fuego. El grano hace el resto.\n## cierre\nEso es el agua. Queda el fuego.\n")
+(d / ".estado").mkdir(exist_ok=True); (d / ".estado/guion-presentado-2.md").write_text((d / "guion.md").read_text()); (d / ".estado/guion-presentado-1.md").write_text("## intro\nEl arroz no se pasa por el tiempo. Se pasa por el caldo.\n## desarrollo-1\nMide el agua antes de encender el fuego. El grano hace el resto.\n## cierre\nEso es el agua. Queda el fuego.\n")
 n = len(enviados()); HC.ciclo()
 g = next(x for x in PU.puertas(("abierta",)) if x.get("encargo") == eid)["id"]
 mas = [e for e in nuevos(n) if e["subject"].startswith("🚪")]

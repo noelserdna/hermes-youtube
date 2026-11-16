@@ -23,12 +23,17 @@ for c in "$ROOT"/perfiles/yt-*.md; do
 done
 python3 -c "import sys; sys.path.insert(0, '$ROOT/plugin/hermes-youtube'); import hyt_pipelines as m, os; sys.exit(0 if all(os.path.getsize('$ROOT/perfiles/' + p + '.md') for p in m.PERFILES_ROL) else 1)" \
   && ok "todos los perfiles de rol tienen carta" || bad "hay perfiles de rol sin carta"
-# agnóstico: el nombre de un canal o de una persona reales no puede aparecer en lo que viaja con el plugin
-REALES='codecrypto|claudio|jorge'
-if grep -rIilE "$REALES" "$ROOT/skills" "$ROOT/perfiles" "$ROOT/pipelines" "$ROOT/plantillas" "$ROOT/plugin" --exclude-dir=__pycache__; then
-  bad "aparece el nombre de un canal o de una persona reales"
-else ok "skills, cartas, pipelines, plantillas y código sin nombres de canales ni personas reales"; fi
+# agnóstico: el nombre de un canal o de una persona reales no puede aparecer en lo que viaja con el plugin. Los nombres
+# a vigilar son privados: uno por línea en privado/nombres-reales.txt (fuera de git). Sin ese fichero no hay qué buscar.
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/skills/x"; echo "Como dice Jorge en CodeCrypto" > "$T/skills/x/SKILL.md"
-grep -rIilE "$REALES" "$T/skills" >/dev/null && ok "la comprobación detecta un nombre real (sin distinguir mayúsculas)" || bad "la comprobación de nombres no detecta nada"
+buscar() { grep -rIilE "$1" "${@:2}" --exclude-dir=__pycache__; }
+LISTA="$ROOT/privado/nombres-reales.txt"
+if [ -s "$LISTA" ]; then
+  REALES=$(grep -v '^\s*$' "$LISTA" | paste -sd'|' -)
+  if buscar "$REALES" "$ROOT/skills" "$ROOT/perfiles" "$ROOT/pipelines" "$ROOT/plantillas" "$ROOT/plugin" "$ROOT/referencias" "$ROOT/tests" "$ROOT/docs" "$ROOT/README.md"; then
+    bad "aparece el nombre de un canal o de una persona reales"
+  else ok "nada de lo que viaja con el plugin nombra un canal ni a una persona reales"; fi
+else ok "sin lista privada de nombres reales: nada que buscar"; fi
+mkdir -p "$T/skills/x"; echo "Como dice Marta en Cocina Clara" > "$T/skills/x/SKILL.md"
+buscar 'cocina clara|marta' "$T/skills" >/dev/null && ok "la comprobación detecta un nombre (sin distinguir mayúsculas)" || bad "la comprobación de nombres no detecta nada"
 exit $fail

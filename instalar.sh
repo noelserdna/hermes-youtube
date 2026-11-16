@@ -41,7 +41,7 @@ $SECO && { echo "(en seco: no se cambia nada)"; exit 0; }
 # ── 1. el arnés, versionado ─────────────────────────────────────────────────────────────────────────────────────────
 mkdir -p "$DEST" "$HYT/canales" "$HYT/puertas"
 # el material de un canal (fuentes/, privado/, canales/) nunca viaja con el código, ni aunque esté en la carpeta del repo
-rsync -a --delete --exclude .git --exclude tests --exclude evals --exclude '__pycache__' --exclude .DS_Store \
+rsync -a --delete --exclude .git --exclude tests --exclude evals --exclude '__pycache__' --exclude .DS_Store --exclude node_modules \
   --exclude /fuentes --exclude /privado --exclude /canales "$ROOT/" "$DEST/"
 ln -sfn "$DEST" "$HYT/actual"
 ARNES="$HYT/actual"

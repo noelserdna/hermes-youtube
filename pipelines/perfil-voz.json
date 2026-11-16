@@ -26,6 +26,7 @@
   },
   "memoria": {
     "pagina": "voz",
-    "de": "perfil-voz.md"
+    "de": "perfil-voz.md",
+    "entera": true
   }
 }

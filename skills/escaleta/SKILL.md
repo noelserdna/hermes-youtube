@@ -51,7 +51,8 @@ Lee además `referencias/retencion.md` y `referencias/ganchos.json`.
 5. Asigna el `material` a cada bloque por su número `n`. Ninguna pieza va en dos bloques. Ningún bloque de
    desarrollo se queda con menos de tres piezas: si pasa, sobra bloque o falta material.
 6. Reparte las `palabras` por bloque. Tienen que sumar el total.
-7. El **cierre**: no anuncia el final ni vende nada. Lleva al vídeo que indica `destino` en `eleccion.json`; si está vacío, a los próximos vídeos del
+7. El **cierre**: no anuncia el final ni vende nada. Lleva al vídeo que indica `destino` en `eleccion.json` (lo eligió una persona, o es
+   otro tema del canal ya elegido); nunca prometas cuándo sale. Si está vacío, lleva a los próximos vídeos del
    canal sin nombrar ninguno; di
    en `gancho_idea` qué pregunta abre hacia él.
 

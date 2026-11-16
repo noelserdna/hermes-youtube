@@ -46,8 +46,19 @@ t 0 "$(c "cat $CL/demo/encargos.jsonl 2>/dev/null | tail -5")" "sola: leer datos
 t 0 "$(c "ls $CL/demo/fuentes && grep -rn promesa $CL/demo/wiki")" "sola: mirar las fuentes y la wiki"
 t 0 "$(c "find $CL/demo -name '*.md'")" "sola: find sin acciones"
 t 0 "$(c "sed -n 1,20p $CL/demo/canal.json")" "sola: sed -n"
+t 0 "$(c 'hyt video lista demo')" "sola: los vídeos del canal"
+t 0 "$(c 'hyt video exportar demo guion-x-1a2b guion')" "sola: exportar un vídeo aprobado"
+t 0 "$(c 'hyt publicados lista demo')" "sola: los publicados"
 
 # ── con aprobación ──
+aprueba "$(c 'hyt video grabado demo guion-x-1a2b')" "aprobación: marcar un vídeo como grabado"
+aprueba "$(c 'hyt video publicado demo guion-x-1a2b --url https://ejemplo.com/v')" "aprobación: marcar un vídeo como publicado"
+aprueba "$(c 'hyt publicados poner demo --titulo "Un vídeo"')" "aprobación: apuntar un publicado"
+aprueba "$(c 'hyt publicados quitar demo v-un-video')" "aprobación: quitar un publicado"
+aprueba "$(c 'hyt correo ciclo')" "aprobación: el ciclo del correo"
+aprueba "$(c 'hyt correo resumen')" "aprobación: el resumen diario"
+aprueba "$(c 'hyt correo prueba demo')" "aprobación: el correo de prueba"
+aprueba "$(c 'hyt video')" "aprobación: «hyt video» a secas no es una consulta"
 aprueba "$(c 'hyt alta nuevo "Canal Nuevo" "Persona Nueva"')" "aprobación: el alta"
 aprueba "$(c 'hyt config demo reglas.titulo_max 60')" "aprobación: config"
 aprueba "$(c 'hyt pausar todo')" "aprobación: pausar"
@@ -61,7 +72,7 @@ echo "$out" | jq -e '(.message | test("«guion» para demo")) and (.rule_key | s
 # ── nunca ──
 t 2 "$(c 'hyt decidir g123 acepto')" "nunca: decidir una puerta (no existe)"
 t 2 "$(c 'hyt secreto guardar demo UNA_CLAVE')" "nunca: guardar claves (es de la persona, en su terminal)"
-for vieja in publicar preguntar ordenar parte propuesta datos tanda gestion mcp novedad mejora cuaderno ia aterrizaje vigilancia contacto correo; do
+for vieja in publicar preguntar ordenar parte propuesta datos tanda gestion mcp novedad mejora cuaderno ia aterrizaje vigilancia contacto; do
   t 2 "$(c "hyt $vieja demo")" "nunca: «hyt ${vieja}» ya no existe"
 done
 t 2 "$(c 'hyt')" "nunca: hyt sin orden"
@@ -133,6 +144,15 @@ G1=$(python3 "$ROOT/plugin/hermes-youtube/hyt_puertas.py" abrir demo "$EID" 2>/d
 si "hyt puertas y hyt puerta" "$H puertas demo | grep -q '$G1 .*abierta .*Guion · Canal Demo' && [ -z \"\$($H puertas otro)\" ] && $H puerta $G1 | grep -q 'tema: Qué es X'"
 no "hyt secreto guardar no funciona sin terminal (ni por una tubería)" "echo valor | $H secreto guardar demo UNA_CLAVE"
 si "y no deja nada escrito" "! grep -q UNA_CLAVE $CL/demo/secretos.env"
+# vídeos y publicados
+si "hyt video lista: cada vídeo con su estado" "$H video lista demo | grep -q 'Qué es X.* · .*($EID)'"
+no "hyt video exportar: solo un vídeo aprobado" "$H video exportar demo $EID guion"
+no "hyt video grabado: solo un vídeo aprobado" "$H video grabado demo $EID"
+no "hyt video exportar sin decir la parte" "$H video exportar demo $EID"
+si "hyt publicados: poner, lista, editar por id y quitar" "$H publicados poner demo --titulo 'El arroz que no se pasa' --pilar p --url https://ejemplo.com/v/1 --fecha 2026-10-01 | grep -q 'v-el-arroz-que-no-se-pasa' && $H publicados lista demo | grep -q '2026-10-01 El arroz que no se pasa \[p\] · https://ejemplo.com/v/1' && $H publicados poner demo --id v-el-arroz-que-no-se-pasa --titulo 'El arroz que nunca se pasa' && [ \$($H publicados lista demo | wc -l) = 1 ] && $H publicados quitar demo v-el-arroz-que-no-se-pasa && [ -z \"\$($H publicados lista demo)\" ]"
+no "hyt publicados quitar uno que no está" "$H publicados quitar demo no-esta"
+no "hyt correo ciclo sin configurar el correo lo dice" "HYT_CORREO_URL= HYT_CORREO_CONF=$T/no.env $H correo ciclo"
+si "hyt correo prueba sin nadie de marketing con correo lo dice" "HYT_CORREO_CONF=$T/no.env $H correo prueba demo | grep -q 'Nadie con el papel «marketing» tiene correo'"
 no "hyt no tiene orden para decidir" "$H decidir x acepto"
 no "ni para publicar" "$H publicar demo"
 no "ni las órdenes que no se han portado" "$H preguntar demo hola || $H datos resumen demo || $H tanda lista demo || $H parte demo"

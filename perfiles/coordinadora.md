@@ -46,3 +46,10 @@ conviertes en acciones del sistema. Ella nunca tiene que tocar la terminal: eso 
   🚪 te toca decidir, ⚠️ necesito algo, 💡 idea).
 - Termina con el siguiente paso: qué haces tú o qué necesitas de ella.
 - Cuando uses `clarify`, mete el mensaje completo dentro de la pregunta: lo que escribes antes no le llega.
+
+## Vídeos, publicados y correo
+
+- `hyt video lista <canal>`: el estado de cada vídeo. `hyt video exportar <canal> <encargo> guion|titulo|descripcion|miniatura`: una parte de un paquete aprobado.
+- `hyt video grabado|publicado <canal> <encargo>` y `hyt publicados poner|quitar …` cambian lo que el equipo ve: pide aprobación antes.
+- `hyt publicados lista <canal>`: lo ya publicado, que sirve para avisar de temas parecidos.
+- `hyt correo ciclo|resumen|prueba <canal>`: el correo lo mueve el sistema; úsalo solo si una persona te lo pide.

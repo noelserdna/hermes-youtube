@@ -1,0 +1,18 @@
+# Worker del correo de hermes-youtube. Antes de desplegar: pon tu buzón, tu remitente y el id de tu KV
+# («wrangler kv namespace create CORREO»), y el secreto compartido con «wrangler secret put CORREO_SECRETO».
+name = "hermes-youtube-correo"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[send_email]]
+name = "EMAIL"
+
+[vars]
+BUZON = "buzon@ejemplo.com"
+REMITENTE = "hermes@correo.ejemplo.com"
+NOMBRE = "hermes-youtube"
+
+[[kv_namespaces]]
+binding = "CORREO"
+id = "PON_AQUI_EL_ID_DE_TU_KV"

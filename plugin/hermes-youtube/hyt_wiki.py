@@ -152,7 +152,8 @@ def regenerar_canal(slug: str) -> None:
 
 
 def de_salida(slug: str, eid: str, memoria: dict) -> None:
-    """Fin de una pipeline que declara «memoria»: {pagina, de, seccion?}: copia esa sección de su salida (enlazada)."""
+    """Fin de una pipeline que declara «memoria»: {pagina, de, seccion?, entera?}: copia esa sección de su salida
+    (enlazada). Se recorta salvo que la pipeline la pida «entera» (la guía de voz se usa completa)."""
     try:
         f = C.carpeta(slug) / "encargos" / eid / memoria["de"]
         texto = f.read_text(errors="replace")
@@ -160,7 +161,8 @@ def de_salida(slug: str, eid: str, memoria: dict) -> None:
         if sec:
             m = re.search(rf"^(#+)\s*{re.escape(sec)}.*?$\n(.*?)(?=^\1\s|\Z)", texto, re.M | re.S)
             texto = m.group(2) if m else texto
-        cuerpo = f"Sale del encargo `{eid}` ({memoria['de']}). Ver el original para el detalle.\n\n{texto.strip()[:MAX_LEER]}"
+        texto = texto.strip() if memoria.get("entera") else texto.strip()[:MAX_LEER]
+        cuerpo = f"Sale del encargo `{eid}` ({memoria['de']}). Ver el original para el detalle.\n\n{texto}"
         escribir(slug, memoria["pagina"], cuerpo, [f"encargo {eid}"], f"cierre de {eid}")
     except Exception:   # noqa: BLE001
         pass

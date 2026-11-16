@@ -1,4 +1,4 @@
-"""Puertas de hermes-youtube: el núcleo común a todos los medios (Telegram, panel, local; el correo llegará después) y el
+"""Puertas de hermes-youtube: el núcleo común a todos los medios (Telegram, correo, panel y local) y el
 notario. Copiado y adaptado de hermes-sdd (hsdd_nucleo.py, firmar.sh).
 
   «El ejecutor nunca firma; el notario nunca decide; el orquestador nunca interpreta.»
@@ -168,31 +168,60 @@ def deshacer_s() -> int:
     return _segundos("deshacer_s", DESHACER_DEFECTO_S)
 
 
-def persona_de(medio: str, ident) -> tuple:
-    """Persona de aprobadores.json cuya identidad en `medio` es `ident` → (clave, datos) o (None, None)."""
+def _personas_canal(slug: str) -> dict:
+    try:
+        return C.leer(slug).get("personas") or {}
+    except Rechazo:
+        return {}
+
+
+def persona_de(medio: str, ident, slug: str = "") -> tuple:
+    """Persona cuya identidad en `medio` es `ident` → (clave, datos) o (None, None). Sale de aprobadores.json; por el
+    medio `email`, además, de las personas del canal (canal.json → personas) cuyo correo es `ident`: su clave en
+    `personas` es su identidad aunque no esté en aprobadores.json. Con `slug` se mira ese canal; sin él, todos."""
+    if not str(ident):
+        return None, None
     for clave, p in (B.leer(B.home() / "aprobadores.json", {}) or {}).items():
-        if str(ident) and str((p.get("medios") or {}).get(medio, "")) == str(ident):
+        if str((p.get("medios") or {}).get(medio, "")) == str(ident):
             return clave, p
+    if medio == "email":
+        for s in ([slug] if slug else C.listar()):
+            for clave, p in _personas_canal(s).items():
+                if isinstance(p, dict) and str(p.get("correo") or "").strip().lower() == str(ident).strip().lower():
+                    return clave, p
     return None, None
 
 
 def puede_decidir(persona: str, slug: str, papel: str = "", medio: str = "") -> bool:
     """¿Puede `persona` decidir en este canal una puerta que pide `papel`, por este `medio`? Sin papel basta con estar
     autorizada en el canal. Con papel, tiene que tenerlo en canal.json → personas; quien administra (canales ["*"] y
-    sin entrada en las personas del canal) puede, pero solo por el medio local."""
+    sin entrada en las personas del canal) puede, pero solo por el medio local.
+
+    Por `email` decide la persona del canal que tiene correo y el papel de la puerta (sin papel, el de marketing),
+    esté o no en aprobadores.json."""
+    en_canal = _personas_canal(slug).get(persona)
+    roles = (en_canal or {}).get("roles") or [] if isinstance(en_canal, dict) else []
+    if medio == "email" and isinstance(en_canal, dict) and en_canal.get("correo"):
+        return (papel or "marketing") in roles
     p = (B.leer(B.home() / "aprobadores.json", {}) or {}).get(persona) or {}
     canales = p.get("canales", ["*"])
     if not p or not ("*" in canales or slug in canales):
         return False
     if not papel:
         return True
-    try:
-        personas = C.leer(slug).get("personas") or {}
-    except Rechazo:
-        return False
-    if persona in personas:
-        return papel in ((personas[persona] or {}).get("roles") or [])
+    if en_canal is not None:
+        return papel in roles
     return "*" in canales and medio == "local"
+
+
+def _autoriza(puerta: dict, persona: str, medio: str, ident) -> None:
+    """Rechazo si `persona` (con esa identidad en ese medio) no puede decidir esta puerta."""
+    slug, papel = puerta["canal"], puerta.get("papel", "")
+    if not persona or persona_de(medio, ident, slug)[0] != persona:
+        raise Rechazo("No estás autorizado para decidir esta puerta")
+    if not puede_decidir(persona, slug, papel, medio):
+        conocida = puede_decidir(persona, slug, "", medio) or persona in _personas_canal(slug)
+        raise Rechazo(_no_autorizado(papel if conocida else ""))
 
 
 def _no_autorizado(papel: str) -> str:
@@ -311,10 +340,7 @@ def decidir(gid: str, verbo: str, texto: str, persona: str, medio: str, ident, p
         puerta = leer(gid)
         if puerta.get("estado") != "abierta":
             raise Rechazo("Esta puerta ya está resuelta")
-        if persona_de(medio, ident)[0] != persona or not puede_decidir(persona, puerta["canal"]):
-            raise Rechazo("No estás autorizado para decidir esta puerta")
-        if not puede_decidir(persona, puerta["canal"], puerta.get("papel", ""), medio):
-            raise Rechazo(_no_autorizado(puerta.get("papel", "")))
+        _autoriza(puerta, persona, medio, ident)
         opcion = next((o for o in puerta["opciones"] if o["verbo"] == verbo), None)
         if not opcion:
             raise Rechazo("Opción no válida")
@@ -342,10 +368,7 @@ def verificar_dato(gid: str, dato_id, estado: str, valor: str, persona: str, med
             raise Rechazo("Esta puerta no es de verificación de datos")
         if puerta.get("estado") != "abierta":
             raise Rechazo("Esta puerta ya está resuelta")
-        if persona_de(medio, ident)[0] != persona or not puede_decidir(persona, puerta["canal"]):
-            raise Rechazo("No estás autorizado para decidir esta puerta")
-        if not puede_decidir(persona, puerta["canal"], puerta.get("papel", ""), medio):
-            raise Rechazo(_no_autorizado(puerta.get("papel", "")))
+        _autoriza(puerta, persona, medio, ident)
         if estado not in ESTADOS_DATO:
             raise Rechazo(f"Un dato queda como: {', '.join(ESTADOS_DATO)}")
         valor = (valor or "").strip()
@@ -399,7 +422,7 @@ def _valida_actor(puerta: dict) -> str:
     """Comprueba de nuevo quién decidió. Devuelve el texto de firma («Ana (telegram)»)."""
     dec = puerta.get("decision") or {}
     actor = dec.get("actor") or {}
-    clave, datos = persona_de(actor.get("medio", ""), actor.get("id", ""))
+    clave, datos = persona_de(actor.get("medio", ""), actor.get("id", ""), puerta["canal"])
     if not clave or clave != actor.get("persona") \
             or not puede_decidir(clave, puerta["canal"], puerta.get("papel", ""), actor.get("medio", "")):
         raise Rechazo("Quien decidió no está autorizado en ese canal o por ese medio")
@@ -457,6 +480,10 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
     enc["estado"] = "cerrado"
     enc.pop("puerta_id", None)
     E.guardar(slug, enc)
+    try:   # un guion aprobado del todo: el canal aprende de él (ejemplo de voz, apertura usada, piezas gastadas)
+        _cargar("hyt_videos").al_aprobar(slug, eid)
+    except Exception:   # noqa: BLE001 — aprender es un extra: no puede tumbar una aprobación ya firmada
+        pass
     return resultado
 
 
@@ -593,6 +620,15 @@ def vencidas() -> list:
     return out
 
 
+def firmar_ya(gid: str) -> dict:
+    """Firma una puerta recién decidida sin esperar a la ventana para deshacer (medio local; aprobar por correo)."""
+    with B.cerrojo("puertas"):
+        p = leer(gid)
+        p["firmar_en"] = 0
+        B.escribir(indice(gid), p)
+    return firmar(gid)
+
+
 def decidir_local(gid: str, verbo: str, texto: str = "", forzar: str = "") -> dict:
     """Medio local (plan B sin Telegram): la persona en esta máquina decide y se firma al momento. `forzar` (un motivo)
     permite aprobar una puerta con aviso grave; queda en puertas.jsonl."""
@@ -603,11 +639,7 @@ def decidir_local(gid: str, verbo: str, texto: str = "", forzar: str = "") -> di
     if forzar and not forzar.strip():
         raise Rechazo("--forzar necesita un motivo")
     decidir(gid, verbo, texto, clave, "local", usuario, {"forzado": forzar.strip()} if forzar else None)
-    with B.cerrojo("puertas"):
-        p = leer(gid)
-        p["firmar_en"] = 0
-        B.escribir(indice(gid), p)
-    return firmar(gid)
+    return firmar_ya(gid)
 
 
 def dato_local(gid: str, dato_id, estado: str, valor: str = "") -> dict:

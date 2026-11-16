@@ -1,12 +1,13 @@
 """hermes-youtube — medio DASHBOARD: la pestaña «YouTube» del panel web de Hermes (/api/plugins/hermes-youtube/).
 
-Solo lectura por ahora: enseña los canales, lo que tienen en marcha y las puertas, pero NO decide (las puertas se
-deciden en Telegram o en local). La identidad sale de la sesión del panel (con login: el email o el id de la cuenta;
-en modo local, 127.0.0.1 y sin login: el usuario del sistema). Debe figurar en aprobadores.json con el medio
-"dashboard". Copiado y adaptado de hermes-sdd (dashboard/plugin_api.py).
+Enseña los canales, sus vídeos con su estado, las puertas y los publicados, y deja hacer desde el panel lo que es del
+panel: verificar los datos uno a uno (quien tiene el papel de esa puerta), dar la puerta de datos por verificada, llevar
+la lista de publicados y las acciones de marketing (pedir una propuesta, un tema propio, marcar grabado o publicado y
+exportar un vídeo aprobado). Las demás puertas se deciden por correo o en Telegram: aquí son de solo lectura.
 
-El panel completo (vídeos con su estado y su ronda, verificación de datos uno a uno, publicados y acciones) llega en
-un paso posterior: sus rutas irán aquí.
+La identidad sale de la sesión del panel (con login: el email o el id de la cuenta; en modo local, 127.0.0.1 y sin
+login: el usuario del sistema). Debe figurar en aprobadores.json con el medio "dashboard". Copiado y adaptado de
+hermes-sdd (dashboard/plugin_api.py).
 """
 from __future__ import annotations
 
@@ -56,6 +57,36 @@ def _actor(request: Request) -> tuple:
     return persona, ident, prueba
 
 
+def _marketing(request: Request, slug: str) -> tuple:
+    """Las acciones del panel son de marketing: quien tiene ese papel en el canal, o quien administra (autorizado en
+    todos los canales y sin entrada entre las personas de este)."""
+    persona, ident, prueba = _actor(request)
+    try:
+        en_canal = (C.leer(slug).get("personas") or {}).get(persona)
+    except B.Rechazo as e:
+        raise HTTPException(404, str(e))
+    if not PU.puede_decidir(persona, slug):
+        raise HTTPException(403, "no estás autorizado en este canal")
+    if en_canal is None:
+        if "*" not in ((B.leer(B.home() / "aprobadores.json", {}) or {}).get(persona) or {}).get("canales", ["*"]):
+            raise HTTPException(403, "esta acción es de quien lleva marketing en el canal")
+    elif "marketing" not in (en_canal.get("roles") or []):
+        raise HTTPException(403, "esta acción es de quien lleva marketing en el canal")
+    return persona, ident, prueba
+
+
+def _V():
+    return _cargar("hyt_videos")
+
+
+async def _cuerpo(request: Request) -> dict:
+    try:
+        d = await request.json()
+    except Exception:   # noqa: BLE001
+        d = {}
+    return d if isinstance(d, dict) else {}
+
+
 def _accion(f):
     try:
         return f()
@@ -82,6 +113,7 @@ async def canales(request: Request):
             pend = [p for p in PU.puertas(("abierta", "decidida", "error")) if p["canal"] == s]
             out.append({"slug": s, "nombre": cfg["nombre"], "presentador": cfg.get("presentador", ""),
                         "idioma": cfg.get("idioma", ""), "pilares": [p.get("nombre") for p in cfg.get("pilares") or []],
+                        "pilares_id": [p.get("id") for p in cfg.get("pilares") or []],
                         "capacidades": sorted(C.capacidades(cfg)), "pausado": bool((cfg.get("politicas") or {}).get("pausado")),
                         "encargos": [{"id": e["id"], "nombre": e["nombre"], "estado": e.get("estado"), **E.situacion(e)}
                                      for e in abiertos],   # ronda y, si espera en una, su puerta (tipo, papel, n de m)
@@ -100,3 +132,116 @@ async def sistema(request: Request):
 async def puertas(request: Request):
     _actor(request)
     return [_vista(p) for p in PU.puertas(("abierta", "decidida", "error"))]
+
+
+# ── vídeos ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+@router.get("/videos/{slug}")
+async def videos(slug: str, request: Request):
+    _actor(request)
+    return await run_in_threadpool(lambda: _accion(lambda: (C.leer(slug), _V().lista(slug))[1]))
+
+
+# ── datos por verificar ─────────────────────────────────────────────────────────────────────────────────────────────
+CAMPOS_DATO = ("id", "dato", "frase", "motivo", "fuente", "versiones", "estado", "valor")
+
+
+@router.get("/datos")
+async def datos(request: Request):
+    persona, _, _ = _actor(request)
+    def hacer():
+        out = []
+        for p in PU.puertas(("abierta",)):
+            if p.get("tipo") != "datos" or not p.get("encargo"):
+                continue
+            out.append({"puerta": p["id"], "canal": p["canal"], "encargo": p["encargo"], "titulo": p["titulo"],
+                        "papel": p.get("papel", ""), "pendientes": PU.datos_pendientes(p),
+                        "puedes": PU.puede_decidir(persona, p["canal"], p.get("papel", ""), "dashboard"),
+                        "datos": [{k: x.get(k) for k in CAMPOS_DATO} for x in PU.datos_de(p)]})
+        return out
+    return await run_in_threadpool(hacer)
+
+
+@router.post("/datos/{puerta}/aprobar")
+async def datos_aprobar(puerta: str, request: Request):
+    persona, ident, prueba = _actor(request)
+    def hacer():
+        p = PU.leer(puerta)
+        if p.get("tipo") != "datos":
+            raise B.Rechazo("Desde el panel solo se decide la puerta de datos")
+        return _vista(PU.decidir(puerta, "acepto", "", persona, "dashboard", ident, prueba))
+    return await run_in_threadpool(lambda: _accion(hacer))
+
+
+@router.post("/datos/{puerta}/{dato}")
+async def datos_verificar(puerta: str, dato: str, request: Request):
+    persona, ident, _ = _actor(request)
+    c = await _cuerpo(request)
+    def hacer():
+        d = PU.verificar_dato(puerta, dato, str(c.get("estado") or ""), str(c.get("valor") or ""), persona, "dashboard", ident)
+        return {"dato": {k: d.get(k) for k in CAMPOS_DATO}, "pendientes": PU.datos_pendientes(PU.leer(puerta))}
+    return await run_in_threadpool(lambda: _accion(hacer))
+
+
+# ── publicados ──────────────────────────────────────────────────────────────────────────────────────────────────────
+@router.get("/publicados/{slug}")
+async def publicados(slug: str, request: Request):
+    _actor(request)
+    return await run_in_threadpool(lambda: _accion(lambda: (C.leer(slug), _V().publicados(slug))[1]))
+
+
+@router.post("/publicados/{slug}")
+async def publicado_poner(slug: str, request: Request):
+    persona, _, _ = _marketing(request, slug)
+    c = await _cuerpo(request)
+    datos_ = {k: str(c[k]).strip() for k in ("id", "titulo", "pilar", "url", "fecha") if str(c.get(k) or "").strip()}
+    return await run_in_threadpool(lambda: _accion(lambda: _V().publicado_poner(slug, datos_, persona)))
+
+
+@router.delete("/publicados/{slug}/{ident}")
+async def publicado_quitar(slug: str, ident: str, request: Request):
+    persona, _, _ = _marketing(request, slug)
+    return await run_in_threadpool(lambda: _accion(lambda: (_V().publicado_quitar(slug, ident, persona), {"ok": True})[1]))
+
+
+# ── acciones de marketing ───────────────────────────────────────────────────────────────────────────────────────────
+def _lanzado(e: dict) -> dict:
+    return {"encargo": e["id"], "nombre": e.get("nombre", ""), "duplicado": bool(e.get("duplicado"))}
+
+
+@router.post("/acciones/{slug}/propuesta")
+async def accion_propuesta(slug: str, request: Request):
+    persona, _, _ = _marketing(request, slug)
+    return await run_in_threadpool(lambda: _accion(lambda: _lanzado(E.lanzar(slug, "propuesta", {}, quien=f"{persona} (panel)"))))
+
+
+@router.post("/acciones/{slug}/tema")
+async def accion_tema(slug: str, request: Request):
+    persona, _, _ = _marketing(request, slug)
+    c = await _cuerpo(request)
+    def hacer():
+        tema, pilar = str(c.get("tema") or "").strip(), str(c.get("pilar") or "").strip()
+        if not tema:
+            raise B.Rechazo("Falta el tema")
+        pilares = [x.get("id") for x in C.leer(slug).get("pilares") or [] if isinstance(x, dict)]
+        if pilar and pilares and pilar not in pilares:
+            raise B.Rechazo(f"No conozco el pilar «{pilar}». Los de este canal: {', '.join(pilares)}")
+        return _lanzado(E.lanzar(slug, "titulo-miniatura", {"tema": tema[:200], "pilar": pilar or "sin-pilar"},
+                                 brief=f"Tema propio, pedido desde el panel por {persona}.", quien=f"{persona} (panel)"))
+    return await run_in_threadpool(lambda: _accion(hacer))
+
+
+@router.post("/acciones/{slug}/marcar")
+async def accion_marcar(slug: str, request: Request):
+    persona, _, _ = _marketing(request, slug)
+    c = await _cuerpo(request)
+    def hacer():
+        if c.get("estado") not in ("grabado", "publicado"):
+            raise B.Rechazo("Se marca como grabado o como publicado")
+        return _V().marcar(slug, str(c.get("encargo") or ""), c["estado"], persona, str(c.get("url") or ""))
+    return await run_in_threadpool(lambda: _accion(hacer))
+
+
+@router.get("/exportar/{slug}/{encargo}/{parte}")
+async def exportar(slug: str, encargo: str, parte: str, request: Request):
+    _marketing(request, slug)
+    return await run_in_threadpool(lambda: _accion(lambda: {"parte": parte, "texto": _V().exportar(slug, encargo, parte)}))

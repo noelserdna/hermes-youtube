@@ -7,8 +7,8 @@ ejecuta. La identidad sale del update de Telegram (from.id), nunca de un texto.
 
 Los botones usan el prefijo «ys:» (puertas) y «yl:» (lecciones) para convivir con otros plugins de puertas.
 
-El correo (puertas por correo con código de un solo uso, resumen diario) se portará en un paso posterior: su ciclo irá
-en una tarea propia junto a _bucle() y sus envíos, donde lo indican los comentarios «correo:» de _vuelta().
+El correo (hyt_correo: puertas con botones y código de un solo uso) va en su propia tarea, _bucle_correo(): cada
+minuto recoge lo recibido, envía las puertas abiertas a quien tiene su papel, firma lo decidido por correo y avisa.
 """
 from __future__ import annotations
 
@@ -278,7 +278,6 @@ async def _vuelta() -> None:
             if p.get("telegram"):
                 await asyncio.wait_for(_sincronizar(bot, p), 60)
             continue
-        # correo: aquí irá el envío de la puerta abierta a quien tiene su papel y el aviso del resultado al firmarse
         if p["estado"] in ("abierta", "decidida") and not p.get("telegram"):
             await asyncio.wait_for(_publicar(bot, p), 60)
             continue
@@ -312,11 +311,26 @@ async def _bucle() -> None:
             pass
 
 
+async def _bucle_correo() -> None:
+    """El correo va en su propia tarea (cada minuto, en un hilo): nunca frena la firma de las puertas. Si no está
+    configurado, el ciclo no hace nada."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(_cargar("hyt_correo").ciclo)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("hermes-youtube: error en el ciclo del correo (sigue)")
+
+
 def _asegurar_bucle() -> None:
     t = _RT.get("bucle")
     if t is None or t.done():
         _RT["bucle"] = asyncio.get_running_loop().create_task(_bucle())
-    # correo: aquí irá su propia tarea (cada minuto, en un hilo), para que nunca frene la firma de las puertas
+    t = _RT.get("bucle_correo")
+    if t is None or t.done():
+        _RT["bucle_correo"] = asyncio.get_running_loop().create_task(_bucle_correo())
 
 
 # ── comandos ────────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ creación de contenido para YouTube.
 
 > **Estado: en construcción.** El núcleo, las pipelines, las skills y la revisión mecánica están escritos y probados
 > sin IA (`bash tests/todo.sh`). Se puede ejecutar una pipeline entera en una máquina con Claude Code (`local.sh`).
-> Faltan el correo, las acciones del panel y la primera instalación en un Hermes de producción. Diseño en
+> Falta la primera instalación en un Hermes de producción y probar el correo con un buzón real. Diseño en
 > [docs/diseno.md](docs/diseno.md); el orden de trabajo, en la [hoja de ruta](#hoja-de-ruta).
 
 ---
@@ -175,8 +175,9 @@ Hermes, nunca en este repositorio.
 | 3 | Pipeline de guion, pasos de código y revisión mecánica, con ejecución local | hecho; afinándose con guiones reales |
 | 4 | Propuesta de temas, títulos y miniaturas | hecho; afinándose |
 | 5 | Cadena de puertas, papeles, rondas y verificación de datos | hecho |
-| 6 | Correo | pendiente |
-| 7 | Panel: vídeos, verificación de datos y acciones | solo lectura |
+| 6 | Correo: puertas con botones, peticiones y resumen diario | hecho; falta probarlo con un buzón real |
+| 7 | Panel: vídeos, verificación de datos, publicados y acciones | hecho |
+| 8 | Primera instalación en un Hermes de producción | pendiente |
 
 ## Probarlo
 

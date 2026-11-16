@@ -5,9 +5,10 @@ Copiado y adaptado de hermes-sdd (encargado/guardia.py).
 
 La coordinadora (perfil default) ve todos los canales. Tres niveles para mover el sistema, todos por la CLI `hyt`
 (nunca por otra vía):
-  · sola            consultar, lanzar pipelines, reintentar una vez,     → se permite
-                    proponer lecciones, sembrar la memoria
-  · con aprobación  alta, config, pausar, reanudar, modelos y            → {"action":"approve"}: Hermes pregunta a la
+  · sola            consultar (también los vídeos y los publicados),     → se permite
+                    exportar un vídeo aprobado, lanzar pipelines,
+                    reintentar una vez, proponer lecciones, sembrar la memoria
+  · con aprobación  alta, config, pausar, reanudar, modelos, fuentes,    → {"action":"approve"}: Hermes pregunta a la
                     lanzar con --excepcion                                 persona; en un cron no hay nadie y se deniega
   · nunca           decidir o firmar puertas, secretos, aprobadores,     → bloqueado (y la CLI ni siquiera lo ofrece)
                     código del arnés, configuración de Hermes
@@ -44,7 +45,9 @@ LECTURA = {"ls", "cat", "head", "tail", "grep", "egrep", "rg", "wc", "jq", "sort
 GIT_LECTURA = {"log", "show", "diff", "status", "blame", "describe", "rev-parse", "ls-files", "shortlog", "grep"}
 HYT_SOLA = {"canales", "estado", "encargos", "encargo", "puertas", "puerta", "pipelines", "plan", "lanzar", "reintentar",
             "vueltas", "leccion", "lecciones", "wiki"}
-HYT_APROBAR = {"alta", "config", "pausar", "reanudar", "modelos", "fuentes"}
+HYT_APROBAR = {"alta", "config", "pausar", "reanudar", "modelos", "fuentes", "video", "publicados", "correo"}
+# de las órdenes con aprobación, las acciones que solo consultan: sola
+HYT_CONSULTA = {"video": {"lista", "exportar"}, "publicados": {"lista"}, "modelos": {"ver"}}
 HYT_NUNCA = {"secreto": "las claves las guarda la persona desde su terminal, nunca un agente"}
 
 
@@ -91,7 +94,9 @@ def orden_hyt(args: list) -> str | None:
             APROBAR.append(f"Lanzar «{pos[1] if len(pos) > 1 else '?'}» para {pos[0] if pos else '?'} "
                            "saltándose el tope semanal del canal")
         return None
-    if sub == "modelos" and args[1:2] in (["ver"], []):
+    if sub == "modelos" and not args[1:2]:
+        return None
+    if args[1:2] and args[1] in HYT_CONSULTA.get(sub, ()):
         return None
     APROBAR.append(f"hyt {' '.join(args)[:300]}")
     return None

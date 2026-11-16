@@ -196,7 +196,17 @@ def p_eleccion(slug: str, d: Path, enc: dict) -> dict:
         if propio:   # un título escrito por la persona se comprueba y se avisa, pero no se bloquea
             c = T.titulo(titulo, (mini or {}).get("texto", ""), el["palabras_clave"], R.reglas(cfg), cfg.get("titulo_cliches"))
             avisos = [m for _, m in c["fallos"] + c["avisos"]] + [a["texto"] for a in R.comunes(titulo, cfg, "el título")]
+    # A dónde lleva el cierre: al vídeo que indicó la persona; si no, a otro tema ya elegido y sin publicar; si no hay
+    # ninguno, a los próximos vídeos del canal sin nombrar uno.
     el["destino"] = _campo(texto, "destino") or params.get("destino", "")
+    el["destino_tipo"] = "indicado" if el["destino"] else "general"
+    if not el["destino"]:
+        try:
+            el["destino"] = _cargar("hyt_videos").siguiente(slug, excepto=enc.get("id", ""))
+        except Exception:   # noqa: BLE001 — sin lista de vídeos, el cierre es general
+            el["destino"] = ""
+        if el["destino"]:
+            el["destino_tipo"] = "otro-tema"
     el["avisos"] = avisos
     if not el["titulo"]:
         raise Rechazo("no hay título elegido ni tema del que partir")

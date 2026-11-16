@@ -26,7 +26,15 @@ notario. Tampoco hay ninguna para publicar: hermes-youtube no publica.
 
   hyt fuentes cargar <canal> <carpeta|zip> --coleccion <nombre> --tipo <tipo>   ·   hyt fuentes lista <canal>
 
-Irá aquí en un paso posterior: «hyt correo …» (puertas por correo).
+  Vídeos y publicados
+    hyt video lista <canal> · hyt video exportar <canal> <encargo> <guion|titulo|descripcion|miniatura>     (sola)
+    hyt video grabado|publicado <canal> <encargo> [--url U]                                 (con aprobación)
+    hyt publicados lista <canal>                                                            (sola)
+    hyt publicados poner <canal> --titulo T [--pilar P] [--url U] [--fecha AAAA-MM-DD] [--id ID] · hyt publicados quitar <canal> <id>
+  Correo (con aprobación)
+    hyt correo ciclo       recoge lo recibido, envía las puertas, firma lo vencido y avisa de lo firmado
+    hyt correo resumen     un correo por persona con sus puertas abiertas, si alguna lleva más de 24 h
+    hyt correo prueba <canal>
 """
 from __future__ import annotations
 
@@ -102,6 +110,15 @@ def estado(slug: str | None = None) -> str:
         if not abiertos:
             lineas.append("  (nada en marcha)")
     return "\n".join(lineas)
+
+
+def linea_video(v: dict) -> str:
+    """Un vídeo en una línea: título, pilar, estado, ronda y a quién espera o qué le pasa."""
+    puerta = v.get("puerta") or {}
+    return (f"{v.get('titulo', '')}" + (f" [{v['pilar']}]" if v.get("pilar") else "") + f" · {v.get('estado', '')}"
+            + (f" · ronda {v['ronda']} de {v.get('rondas_max', '?')}" if v.get("ronda") else "")
+            + (f" · espera: {puerta.get('papel') or 'una decisión'}" if puerta else "")
+            + (f" · ⚠️ {v['incidencia']}" if v.get("incidencia") else "") + f" ({v.get('encargo', '')})")
 
 
 def _etapas_hechas(slug: str, eid: str) -> int:
@@ -199,7 +216,12 @@ def main(argv=None) -> int:
     x = sub.add_parser("wiki"); x.add_argument("accion", choices=("sembrar",)); x.add_argument("canal")
     x = sub.add_parser("fuentes"); x.add_argument("accion", choices=("cargar", "lista")); x.add_argument("canal")
     x.add_argument("origen", nargs="?", default=""); x.add_argument("--coleccion", default=""); x.add_argument("--tipo", default="directo")
-    # «correo» (puertas por correo) se añadirá aquí en un paso posterior
+    x = sub.add_parser("video"); x.add_argument("accion", choices=("lista", "grabado", "publicado", "exportar"))
+    x.add_argument("canal"); x.add_argument("encargo", nargs="?"); x.add_argument("parte", nargs="?"); x.add_argument("--url", default="")
+    x = sub.add_parser("publicados"); x.add_argument("accion", choices=("lista", "poner", "quitar")); x.add_argument("canal")
+    x.add_argument("id_quitar", nargs="?"); x.add_argument("--id", default=""); x.add_argument("--titulo", default="")
+    x.add_argument("--pilar", default=""); x.add_argument("--url", default=""); x.add_argument("--fecha", default="")
+    x = sub.add_parser("correo"); x.add_argument("accion", choices=("ciclo", "resumen", "prueba")); x.add_argument("canal", nargs="?")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "canales":
@@ -288,6 +310,49 @@ def main(argv=None) -> int:
                 print("\n".join(f"⚠️ {x}" for x in r["avisos"]), end="\n" if r["avisos"] else "")
             else:
                 return F.main(["lista", a.canal])
+        elif a.cmd == "video":
+            V = _cargar("hyt_videos")
+            C.leer(a.canal)
+            if a.accion == "lista":
+                for v in V.lista(a.canal):
+                    print(linea_video(v))
+            elif a.accion == "exportar":
+                if not a.encargo or not a.parte:
+                    raise Rechazo("uso: hyt video exportar <canal> <encargo> <guion|titulo|descripcion|miniatura>")
+                print(V.exportar(a.canal, a.encargo, a.parte))
+            else:
+                if not a.encargo:
+                    raise Rechazo(f"uso: hyt video {a.accion} <canal> <encargo> [--url U]")
+                V.marcar(a.canal, a.encargo, a.accion, quien(), a.url or a.parte or "")
+                print(f"🎬 {a.encargo}: {a.accion}")
+        elif a.cmd == "publicados":
+            V = _cargar("hyt_videos")
+            C.leer(a.canal)
+            if a.accion == "lista":
+                for x in V.publicados(a.canal):
+                    print(f"{x.get('id', ''):14} {str(x.get('fecha', ''))[:10]:10} {x.get('titulo', '')}"
+                          + (f" [{x['pilar']}]" if x.get("pilar") else "") + (f" · {x['url']}" if x.get("url") else ""))
+            elif a.accion == "poner":
+                if not a.titulo and not a.id:
+                    raise Rechazo("uso: hyt publicados poner <canal> --titulo T [--pilar P] [--url U] [--fecha AAAA-MM-DD] [--id ID]")
+                datos = {k: v for k, v in (("id", a.id), ("titulo", a.titulo), ("pilar", a.pilar), ("url", a.url), ("fecha", a.fecha)) if v}
+                r = V.publicado_poner(a.canal, datos, quien())
+                print(f"📺 Publicado apuntado: {r.get('titulo', '')} ({r.get('id', '')})")
+            else:
+                if not a.id_quitar:
+                    raise Rechazo("uso: hyt publicados quitar <canal> <id>")
+                V.publicado_quitar(a.canal, a.id_quitar, quien())
+                print(f"🗑 Quitado de publicados: {a.id_quitar}")
+        elif a.cmd == "correo":
+            HC = _cargar("hyt_correo")
+            if a.accion == "prueba":
+                if not a.canal:
+                    raise Rechazo("uso: hyt correo prueba <canal>")
+                sys.exit(HC.main(["prueba", a.canal]))
+            if not HC.activo():
+                raise Rechazo("El correo no está configurado (HYT_CORREO_URL, HYT_CORREO_SECRETO y HYT_CORREO_BUZON en "
+                              "~/.config/hermes-youtube/correo.env)")
+            sys.exit(HC.main([a.accion]))
         elif a.cmd == "wiki":
             print("🧠 Memoria sembrada: " + ", ".join(_cargar("hyt_wiki").sembrar(a.canal)))
     except Rechazo as e:

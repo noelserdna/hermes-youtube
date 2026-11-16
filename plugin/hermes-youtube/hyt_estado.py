@@ -110,7 +110,15 @@ def turno(slug: str, ahora: float | None = None) -> str:
     else:
         lineas.append("Puertas pendientes: ninguna.")
 
-    abiertos = [e for e in E.listar(slug, abiertos=True) if e.get("estado") != "en-puerta"]
+    try:   # los vídeos, con el estado que ve la persona (si el módulo de vídeos está)
+        videos = [v for v in _cargar("hyt_videos").lista(slug) if v.get("estado_id") not in ("publicado", "descartado")]
+    except Exception:   # noqa: BLE001
+        videos = []
+    if videos:
+        lineas.append("Vídeos:")
+        lineas += ["- " + _cargar("hyt_cli").linea_video(v)[:150] for v in videos[:8]]
+    de_video = {v.get("encargo") for v in videos}
+    abiertos = [e for e in E.listar(slug, abiertos=True) if e.get("estado") != "en-puerta" and e["id"] not in de_video]
     if abiertos:
         lineas.append("En marcha:")
         for e in abiertos[-6:]:

@@ -34,9 +34,11 @@ e.update(estado="hecho", informe=True); E.guardar("demo", e)
 t = ES.turno("demo")
 assert "Estado real de Canal Demo" in t and "📊 Una decisión" in t and "hace 3 días" in t and "aviso grave" in t, t
 assert "Ya decidida" not in t and "puerta decision: rechazo → descartado" in t, t           # lo firmado sale en lo reciente
-assert f"- Guion · en-curso" in t and en_marcha["id"] in t, t
+assert en_marcha["id"] in t, t
 assert "Nota suelta" in t and "Nota: tres ideas" in t and "[clave tapada]" in t and "ghp_" not in t, t
 assert len(t) <= ES.MAX_CANAL
+assert "Vídeos:" in t and f"- Un tema en marcha [p] · {ES._cargar('hyt_videos').ESTADOS['titulo-elegido']}" in t, t     # el vídeo, con el estado que ve la persona
+assert t.count(en_marcha["id"]) == 1                                # y no se repite entre los encargos «en marcha»
 assert "Puertas pendientes: ninguna." in ES.turno("otro")
 c = ES.canales()
 assert "Estado real de los canales" in c and "Disco" in c, c

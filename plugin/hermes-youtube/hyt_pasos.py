@@ -110,7 +110,8 @@ def banco(slug: str) -> list:
             except ValueError:
                 continue
             if x.get("titulo"):
-                ult[T.plano(x["titulo"])] = {"titulo": x["titulo"], "estado": x.get("estado", "propuesta"), "pilar": x.get("pilar", "")}
+                ult[T.plano(x["titulo"])] = {"titulo": x["titulo"], "estado": x.get("estado", "propuesta"),
+                                             "pilar": x.get("pilar", ""), "encargo": x.get("encargo", "")}
     for v in (B.leer(C.carpeta(slug) / "videos.json", None) or {}).get("publicados", []):
         if v.get("titulo"):
             ult[T.plano(v["titulo"])] = {"titulo": v["titulo"], "estado": "publicado", "pilar": v.get("pilar", "")}
@@ -296,14 +297,16 @@ def t_seleccionar(slug: str, d: Path, enc: dict) -> dict:
     cfg = C.leer(slug)
     r = R.reglas(cfg)
     piezas = {p["id"]: p for p in inventario(slug)["piezas"]}
-    minimo = r["ppm"] * r["minutos"][0] // 2
+    # Lo que citan las piezas es un índice, no el guion: la etapa de documentar vuelve a las fuentes. Aquí solo se
+    # descarta lo que claramente no tiene de dónde salir.
+    minimo, min_piezas = int(r.get("material_min") or 300), int(r.get("material_piezas_min") or 3)
     todos = [c for c in cand if isinstance(c, dict) and c.get("titulo")]
     frec: dict = {}
     for c in todos:
         for w in set(T.contenido(c["titulo"])):
             frec[w] = frec.get(w, 0) + 1
     genericas = {w for w, n in frec.items() if n > len(todos) * 0.3}   # las palabras del canal no distinguen un tema
-    previos = banco(slug)
+    previos = [p for p in banco(slug) if not enc.get("id") or p.get("encargo") != enc.get("id")]   # no contra sí misma
     validos, descartes = [], []
     for c in todos:
         n = notas.get(c.get("id"))
@@ -315,8 +318,9 @@ def t_seleccionar(slug: str, d: Path, enc: dict) -> dict:
             continue
         suyas = [piezas[i] for i in c.get("piezas") or [] if i in piezas]
         material = sum(int(p.get("palabras") or 0) for p in suyas)
-        if material < minimo:
-            descartes.append({**c, "motivo": f"material insuficiente ({material} palabras de {minimo})"})
+        if material < minimo or len(suyas) < min_piezas:
+            descartes.append({**c, "motivo": f"material insuficiente ({len(suyas)} piezas, {material} palabras; "
+                                             f"hacen falta {min_piezas} y {minimo})"})
             continue
         if R.comunes(f"{c['titulo']}. {c.get('linea', '')}", cfg):
             descartes.append({**c, "motivo": "lleva contenido excluido o una promesa no permitida"})
@@ -332,8 +336,21 @@ def t_seleccionar(slug: str, d: Path, enc: dict) -> dict:
     temas, suplentes, avisos = [], [], []
     for p in [x["id"] for x in cfg.get("pilares") or [] if isinstance(x, dict)] or sorted({v["pilar"] for v in validos}):
         suyos = [v for v in validos if v["pilar"] == p]
-        temas += suyos[:r["temas_por_pilar"]]
-        suplentes += suyos[r["temas_por_pilar"]:r["temas_por_pilar"] + 2]
+        dentro, fuera = [], []          # variedad: dos temas de la misma serie o con las mismas piezas son el mismo vídeo
+        for v in suyos:
+            gemelo = next((e for e in dentro if (v["serie"] and v["serie"] == e["serie"])
+                           or len(set(v["piezas"]) & set(e["piezas"])) >= 2
+                           or T.similitud(v["titulo"], e["titulo"], genericas) >= 0.5), None)
+            if gemelo or len(dentro) >= r["temas_por_pilar"]:
+                fuera.append({**v, "hermano_de": gemelo["id"]} if gemelo else v)
+            else:
+                dentro.append(v)
+        if len(dentro) < r["temas_por_pilar"]:      # si no hay variedad suficiente, se completa con hermanos
+            dentro += fuera[:r["temas_por_pilar"] - len(dentro)]
+            fuera = [v for v in fuera if v not in dentro]
+        suyos = dentro
+        temas += dentro
+        suplentes += fuera[:2]
         if len(suyos) < r["temas_por_pilar"]:
             avisos.append(f"El pilar «{p}» se queda corto: {len(suyos)} de {r['temas_por_pilar']} temas con material y sin veto.")
     for i, t in enumerate(temas, 1):

@@ -110,6 +110,7 @@ Skill to follow: {skill}{ruta_skill}
 Working folder: {dir} (write only here; read brief.md and contexto-canal.md first)
 Earlier stages left: {previas}
 Write your result to: {salida}
+If {salida} already exists it is from an earlier attempt: write it again, complete.
 Write for people in the channel's language ({idioma}).
 Use ONLY the channel's own material (its sources, its inventory, its wiki and what earlier stages left): do not invent
 figures, cases, names or anecdotes. Whatever is not in that material goes to the list of facts to verify.

@@ -32,7 +32,7 @@
   ],
   "puerta": {
     "tipo": "elegir-temas",
-    "al_aprobar": "nada",
+    "al_aprobar": "temas:titulo-miniatura",
     "rehacer": "generar",
     "papel": "marketing"
   }

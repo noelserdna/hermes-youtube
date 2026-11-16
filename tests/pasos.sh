@@ -50,7 +50,7 @@ S.p_inventario("cocina", d, {})
 assert "cita" not in lee("inventario.json")["piezas"][0] and lee("banco.json")["ideas"][0]["estado"] == "elegida"'
 caso "seleccionar: veta, exige material, respeta el cupo por pilar y avisa de parecidos y pilares cortos" '
 C.config("cocina", "pilares", [{"id": "arroces", "nombre": "Arroces", "tipo": "pilar"}, {"id": "guisos", "nombre": "Guisos", "tipo": "pilar"}])
-C.config("cocina", "reglas.temas_por_pilar", 1); C.config("cocina", "reglas.minutos", [5, 6])
+C.config("cocina", "reglas.temas_por_pilar", 1); C.config("cocina", "reglas.material_min", 800); C.config("cocina", "reglas.material_piezas_min", 1)
 c = lambda i, t, p, pz: {"id": i, "pilar": p, "titulo": t, "linea": "Qué te llevas", "piezas": pz}
 deja("candidatos.json", {"candidatos": [c("c1", "Arroz suelto: la regla del agua", "arroces", ["p0001"]), c("c2", "Por qué tiras arroz cada domingo", "arroces", ["p0001", "p0002"]),
   c("c3", "El truco del caldo", "arroces", ["p0002"]), c("c4", "Sofrito sin prisa", "guisos", [])]})

@@ -323,6 +323,8 @@ def decidir(gid: str, verbo: str, texto: str, persona: str, medio: str, ident, p
         if verbo in APRUEBA and graves(puerta) and not (forzar and medio == "local"):
             raise Rechazo("Tiene un aviso grave de la revisión (🧭 ⛔): solo se puede rehacer o rechazar")
         texto = (texto or "").strip()
+        if verbo in APRUEBA and str(puerta.get("al_aprobar") or "").startswith("temas:") and puerta.get("encargo"):
+            _temas_elegidos(puerta["canal"], puerta["encargo"], texto)   # rechaza aquí lo que no se puede cumplir
         if opcion.get("texto") and not texto:
             raise Rechazo(f"«{opcion['etiqueta']}» necesita un texto: " +
                           ("lo que eliges" if verbo == "algunas" else "el motivo o lo que hay que cambiar"))
@@ -445,6 +447,8 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
     if accion.startswith("pipeline:"):
         nuevo = E.lanzar(slug, accion.split(":", 1)[1], {}, quien=f"notario: puerta {puerta['id']} ({firma})", origen=eid)
         resultado = f"lanzado {nuevo['id']}"
+    elif accion.startswith("temas:"):
+        resultado = _lanzar_temas(slug, eid, accion.split(":", 1)[1], texto, puerta, firma)
     elif accion.startswith("script:"):
         resultado = _script(slug, eid, accion[len("script:"):], firma)
     else:
@@ -454,6 +458,38 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
     enc.pop("puerta_id", None)
     E.guardar(slug, enc)
     return resultado
+
+
+def _temas_elegidos(slug: str, eid: str, texto: str) -> list:
+    """Los temas que la persona eligió de una propuesta, por su número («1, 4, 7» o «todos»). Los suplentes siguen la
+    numeración de los propuestos. Se comprueba al decidir, no al firmar: un número que no existe se corrige en el acto."""
+    datos = _cargar("hyt_pasos")._json(E.carpeta(slug, eid) / "temas.json", None) or {}
+    temas = {int(t["n"]): t for t in datos.get("temas") or [] if str(t.get("n", "")).isdigit()}
+    todos = {**temas, **{len(temas) + i: t for i, t in enumerate(datos.get("suplentes") or [], 1)}}
+    if not todos:
+        raise Rechazo("Esta propuesta no tiene temas entre los que elegir")
+    elegidos = sorted(temas) if re.search(r"\btod[oa]s\b", texto or "", re.I) else \
+        sorted({int(n) for n in re.findall(r"\d+", texto or "")})
+    malos = [n for n in elegidos if n not in todos]
+    if not elegidos or malos:
+        raise Rechazo("Di qué temas eliges por su número (por ejemplo «1, 4, 7») o «todos»"
+                      + (f"; no existen: {', '.join(map(str, malos))}" if malos else ""))
+    return [todos[n] for n in elegidos]
+
+
+def _lanzar_temas(slug: str, eid: str, pid: str, texto: str, puerta: dict, firma: str) -> str:
+    """al_aprobar «temas:<pipeline>»: cada tema elegido arranca su propio encargo, con su resumen y sus piezas."""
+    lanzados = []
+    for t in _temas_elegidos(slug, eid, texto):
+        brief = (f"{t.get('resumen', '')}\n\nPiezas del inventario que lo sostienen: {', '.join(t.get('piezas') or [])}\n"
+                 f"Origen: {', '.join(t.get('origen') or [])}\n"
+                 + (f"Formato: {t['formato']}\n" if t.get("formato") else "") + (f"Serie: {t['serie']}\n" if t.get("serie") else ""))
+        nuevo = E.lanzar(slug, pid, {"tema": t["titulo"], "pilar": t.get("pilar", "")}, brief=brief,
+                         quien=f"notario: puerta {puerta['id']} ({firma})")
+        lanzados.append(nuevo["id"])
+        B.anotar(C.carpeta(slug) / "temas.jsonl", {"ts": B.ahora(), "encargo": eid, "titulo": t["titulo"],
+                                                   "pilar": t.get("pilar", ""), "estado": "elegida", "sigue_en": nuevo["id"]})
+    return f"{len(lanzados)} tema(s) en marcha: " + ", ".join(lanzados)
 
 
 def _aplicar(puerta: dict, firma: str) -> str:

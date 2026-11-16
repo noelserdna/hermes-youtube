@@ -67,7 +67,7 @@ EJECUTORES = ("hermes", "claude")
 PAPELES = ("marketing", "datos", "presentador")   # los mismos que hyt_canales.ROLES
 SI_VACIO = ("saltar",)
 TIPOS_PUERTA = ("alta", "elegir-temas", "elegir-titulo", "revision", "datos", "revision-final", "voz", "decision")
-AL_APROBAR = re.compile(r"^(nada|pipeline:[a-z0-9-]+|script:[A-Za-z0-9._-]+( [^;&|`$<>]*)?)$")
+AL_APROBAR = re.compile(r"^(nada|pipeline:[a-z0-9-]+|temas:[a-z0-9-]+|script:[A-Za-z0-9._-]+( [^;&|`$<>]*)?)$")
 ID = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 DURACION = re.compile(r"^\d{1,3}[mh]$")
 

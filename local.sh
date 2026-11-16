@@ -7,6 +7,7 @@
 #   local.sh fuentes <slug> <zip|carpeta> <colección> <tipo>
 #   local.sh correr <slug> <pipeline> [clave=valor …]  lanza y ejecuta todas las etapas hasta la puerta
 #   local.sh seguir <slug> <encargo> [etapa]           continúa un encargo (desde esa etapa o desde la primera sin hacer)
+#   local.sh repasar <slug> <encargo> <etapa>         repite solo los pasos de código de una etapa ya hecha
 #   local.sh decidir <puerta> <acepto|cambios|rechazo|algunas> [texto]
 #   local.sh dato <puerta> <dato> <verificado|corregido|eliminado> [valor]
 #   local.sh estado <slug>
@@ -31,7 +32,7 @@ etapas() {  # etapas <slug> <encargo> [desde]
     o=$(echo "$r" | jq -r '.outcome // "?"' 2>/dev/null || echo "?")
     printf '%s · %ss · %s $\n' "$o" "$(( $(date +%s) - t0 ))" "$(echo "$r" | jq -r '.cost_usd // 0' 2>/dev/null)"
     echo "$r" | jq -r '"   " + ((.resumen // .reason // "") | tostring | gsub("\n"; " ") | .[-300:])' 2>/dev/null
-    if [ "$o" != done ]; then echo "✋ Parado en «$e». Para seguir: local.sh seguir $slug $eid $e"; return 1; fi
+    if [ "$o" != done ]; then echo "✋ Parado en «${e}». Para seguir: local.sh seguir ${slug} ${eid} ${e}"; return 1; fi
     g=$(echo "$r" | jq -r '.puerta // empty' 2>/dev/null); [ -n "$g" ] && echo "🚪 Puerta abierta: $g  (local.sh decidir $g acepto|cambios|rechazo [texto])"
   done
   echo "📁 $d"
@@ -60,6 +61,7 @@ PY
     echo "$out"; eid=$(echo "$out" | grep -oE '\([a-z0-9-]+\)' | head -1 | tr -d '()')
     [ -n "$eid" ] && etapas "$slug" "$eid" ;;
   seguir) etapas "$2" "$3" "${4:-}" ;;
+  repasar) python3 "$P/hyt_repasar.py" "$2" "$3" "$4" ;;
   decidir) python3 "$P/hyt_puertas.py" decidir-local "$2" "$3" "${4:-}" ;;
   dato) python3 "$P/hyt_puertas.py" dato-local "$2" "$3" "$4" "${5:-}" ;;
   estado) hyt estado "$2"; hyt puertas "$2" ;;

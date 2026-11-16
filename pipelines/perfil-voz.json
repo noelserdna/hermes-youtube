@@ -1,0 +1,31 @@
+{
+  "id": "perfil-voz",
+  "nombre": "Perfil de voz",
+  "descripcion": "Construye el perfil de voz de quien presenta a partir de sus fuentes: fragmentos literales por función, banco de analogías, muletillas y ejemplos completos.",
+  "parametros": {},
+  "etapas": [
+    {
+      "id": "perfil",
+      "titulo": "Perfil de voz",
+      "perfil": "yt-doble",
+      "skill": "perfil-voz",
+      "ejecutor": "claude",
+      "max_runtime": "60m",
+      "salida": "perfil-voz.md",
+      "prepara": [
+        "fuentes",
+        "voz"
+      ]
+    }
+  ],
+  "puerta": {
+    "tipo": "voz",
+    "al_aprobar": "nada",
+    "rehacer": "perfil",
+    "papel": "presentador"
+  },
+  "memoria": {
+    "pagina": "voz",
+    "de": "perfil-voz.md"
+  }
+}

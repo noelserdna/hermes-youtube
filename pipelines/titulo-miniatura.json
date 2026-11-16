@@ -1,0 +1,64 @@
+{
+  "id": "titulo-miniatura",
+  "nombre": "Título y miniatura",
+  "descripcion": "Para un tema: el brief con sus ángulos, treinta títulos, las ideas de miniatura y la prueba del espectador. El código elige los títulos que se presentan.",
+  "parametros": {
+    "tema": "El tema, en una frase",
+    "pilar": "El id del pilar al que pertenece"
+  },
+  "etapas": [
+    {
+      "id": "angulo",
+      "titulo": "Ángulo y brief: {tema}",
+      "perfil": "yt-estratega",
+      "skill": "angulo",
+      "ejecutor": "hermes",
+      "max_runtime": "15m",
+      "salida": "brief.json",
+      "prepara": [
+        "inventario",
+        "referencias"
+      ],
+      "tras": [
+        "brief"
+      ]
+    },
+    {
+      "id": "titular",
+      "titulo": "Títulos: {tema}",
+      "perfil": "yt-titulador",
+      "skill": "titular",
+      "ejecutor": "claude",
+      "max_runtime": "15m",
+      "salida": "titulos.json"
+    },
+    {
+      "id": "miniaturas",
+      "titulo": "Ideas de miniatura: {tema}",
+      "perfil": "yt-miniaturista",
+      "skill": "miniaturas",
+      "ejecutor": "hermes",
+      "max_runtime": "15m",
+      "salida": "miniaturas.json"
+    },
+    {
+      "id": "espectador",
+      "titulo": "Prueba del espectador: {tema}",
+      "perfil": "yt-espectador",
+      "skill": "espectador",
+      "ejecutor": "hermes",
+      "max_runtime": "15m",
+      "salida": "espectador.json",
+      "si_cambios": "titular",
+      "tras": [
+        "opciones"
+      ]
+    }
+  ],
+  "puerta": {
+    "tipo": "elegir-titulo",
+    "al_aprobar": "pipeline:guion",
+    "rehacer": "titular",
+    "papel": "marketing"
+  }
+}

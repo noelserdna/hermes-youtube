@@ -1,0 +1,39 @@
+{
+  "id": "propuesta",
+  "nombre": "Propuesta de temas",
+  "descripcion": "Genera muchos candidatos por pilar a partir del inventario, los puntúa otro agente viendo solo el título, y el código selecciona los mejores con material suficiente.",
+  "parametros": {},
+  "etapas": [
+    {
+      "id": "generar",
+      "titulo": "Generar candidatos de tema",
+      "perfil": "yt-estratega",
+      "skill": "generar-temas",
+      "ejecutor": "claude",
+      "max_runtime": "30m",
+      "salida": "candidatos.json",
+      "prepara": [
+        "inventario",
+        "referencias"
+      ]
+    },
+    {
+      "id": "puntuar",
+      "titulo": "Puntuar los candidatos",
+      "perfil": "yt-espectador",
+      "skill": "puntuar-temas",
+      "ejecutor": "hermes",
+      "max_runtime": "20m",
+      "salida": "puntuacion.json",
+      "tras": [
+        "seleccionar"
+      ]
+    }
+  ],
+  "puerta": {
+    "tipo": "elegir-temas",
+    "al_aprobar": "nada",
+    "rehacer": "generar",
+    "papel": "marketing"
+  }
+}

@@ -11,8 +11,10 @@ Es un plugin para [Hermes Agent](https://github.com/NousResearch/hermes-agent), 
 mismo esqueleto (pipelines como datos, puertas, notario sin IA, revisión mecánica, memoria en una wiki), aplicado a la
 creación de contenido para YouTube.
 
-> **Estado: en diseño.** Todavía no hay código instalable. El diseño completo está en
-> [docs/diseno.md](docs/diseno.md) y la [hoja de ruta](#hoja-de-ruta) dice en qué orden se construye.
+> **Estado: en construcción.** El núcleo, las pipelines, las skills y la revisión mecánica están escritos y probados
+> sin IA (`bash tests/todo.sh`). Se puede ejecutar una pipeline entera en una máquina con Claude Code (`local.sh`).
+> Faltan el correo, las acciones del panel y la primera instalación en un Hermes de producción. Diseño en
+> [docs/diseno.md](docs/diseno.md); el orden de trabajo, en la [hoja de ruta](#hoja-de-ruta).
 
 ---
 
@@ -27,7 +29,7 @@ creación de contenido para YouTube.
 7. [Lo que se comprueba sin IA](#lo-que-se-comprueba-sin-ia)
 8. [Qué pone el plugin y qué pone cada canal](#qué-pone-el-plugin-y-qué-pone-cada-canal)
 9. [Qué no hace](#qué-no-hace)
-10. [Hoja de ruta](#hoja-de-ruta) · [Estructura](#estructura-prevista) · [Créditos](#créditos) · [Licencia](#licencia)
+10. [Hoja de ruta](#hoja-de-ruta) · [Estructura](#estructura) · [Créditos](#créditos) · [Licencia](#licencia)
 
 ---
 
@@ -168,15 +170,35 @@ Hermes, nunca en este repositorio.
 | Paso | Qué | Estado |
 |---|---|---|
 | 0 | Diseño y repositorio | hecho |
-| 1 | Esqueleto del plugin a partir de hermes-seo, con sus pruebas sin IA | pendiente |
-| 2 | Canal, carga de fuentes, inventario y perfil de voz | pendiente |
-| 3 | Pipeline de guion y revisión mecánica, con ejecución local | pendiente |
-| 4 | Propuesta de temas, títulos y miniaturas | pendiente |
-| 5 | Cadena de puertas, papeles, rondas y estados | pendiente |
+| 1 | Esqueleto del plugin a partir de hermes-seo, con sus pruebas sin IA | hecho |
+| 2 | Canal, carga de fuentes, inventario y perfil de voz | hecho |
+| 3 | Pipeline de guion, pasos de código y revisión mecánica, con ejecución local | hecho; afinándose con guiones reales |
+| 4 | Propuesta de temas, títulos y miniaturas | hecho; afinándose |
+| 5 | Cadena de puertas, papeles, rondas y verificación de datos | hecho |
 | 6 | Correo | pendiente |
-| 7 | Panel | pendiente |
+| 7 | Panel: vídeos, verificación de datos y acciones | solo lectura |
 
-## Estructura prevista
+## Probarlo
+
+```bash
+git clone https://github.com/noelserdna/hermes-youtube && cd hermes-youtube
+bash tests/todo.sh                       # todas las pruebas, sin IA ni red
+```
+
+Para ejecutar una pipeline de verdad en tu máquina, con [Claude Code](https://claude.com/claude-code) y sin Hermes:
+
+```bash
+./local.sh canal micanal ruta/a/mi-canal            # una carpeta con canal.json (y voz.md, si lo tienes)
+./local.sh fuentes micanal transcripciones.zip charlas guionizado
+./local.sh correr micanal inventario fuente=charlas/v01
+./local.sh correr micanal propuesta
+./local.sh decidir <puerta> algunas "1, 4"
+```
+
+El estado local vive en `privado/.hyt`, que git ignora. `plantillas/canal.json` es el punto de partida de la
+configuración de un canal.
+
+## Estructura
 
 | Ruta | Qué es |
 |---|---|
@@ -187,6 +209,8 @@ Hermes, nunca en este repositorio.
 | `perfiles/` | La carta de cada agente |
 | `plantillas/` | Configuración de partida por tipo de canal |
 | `executors/` | Claude Code y Hermes |
+| `guardia/` | Lo que la coordinadora puede hacer sola, con aprobación o nunca |
+| `local.sh` | Ejecuta una pipeline en una máquina, sin Hermes |
 | `tests/` | Todas las pruebas, sin IA ni red |
 
 ## Créditos

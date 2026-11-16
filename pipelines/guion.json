@@ -1,0 +1,134 @@
+{
+  "id": "guion",
+  "nombre": "Guion",
+  "descripcion": "Del material propio al paquete: material con su cita, escaleta, guion por bloques, tres críticas (datos, retención y voz), un ajuste frase a frase, descripción con capítulos y cierre.",
+  "nueva_pieza": true,
+  "parametros": {
+    "tema": "El tema del vídeo, en una frase",
+    "pilar": "El id del pilar al que pertenece"
+  },
+  "etapas": [
+    {
+      "id": "documentar",
+      "titulo": "Documentar: {tema}",
+      "perfil": "yt-investigador",
+      "skill": "documentar",
+      "ejecutor": "claude",
+      "max_runtime": "15m",
+      "salida": "material.json",
+      "prepara": [
+        "eleccion",
+        "inventario",
+        "fuentes",
+        "referencias"
+      ],
+      "tras": [
+        "material"
+      ]
+    },
+    {
+      "id": "escaleta",
+      "titulo": "Escaleta: {tema}",
+      "perfil": "yt-guionista",
+      "skill": "escaleta",
+      "ejecutor": "claude",
+      "max_runtime": "10m",
+      "salida": "escaleta.json",
+      "prepara": [
+        "voz"
+      ]
+    },
+    {
+      "id": "escribir",
+      "titulo": "Escribir el guion: {tema}",
+      "perfil": "yt-guionista",
+      "skill": "escribir-guion",
+      "ejecutor": "claude",
+      "max_runtime": "20m",
+      "salida": "guion.md"
+    },
+    {
+      "id": "verificar",
+      "titulo": "Verificar los datos: {tema}",
+      "perfil": "yt-verificador",
+      "skill": "verificar",
+      "ejecutor": "hermes",
+      "max_runtime": "10m",
+      "salida": "verificacion.json",
+      "tras": [
+        "datos"
+      ]
+    },
+    {
+      "id": "retencion",
+      "titulo": "Crítica de retención: {tema}",
+      "perfil": "yt-retencion",
+      "skill": "retencion",
+      "ejecutor": "hermes",
+      "max_runtime": "8m",
+      "salida": "retencion.json"
+    },
+    {
+      "id": "voz",
+      "titulo": "Crítica de voz: {tema}",
+      "perfil": "yt-doble",
+      "skill": "voz",
+      "ejecutor": "claude",
+      "max_runtime": "10m",
+      "salida": "voz.json"
+    },
+    {
+      "id": "ajustar",
+      "titulo": "Ajustar el guion: {tema}",
+      "perfil": "yt-guionista",
+      "skill": "ajustar",
+      "ejecutor": "claude",
+      "max_runtime": "10m",
+      "salida": "ajustes-aplicados.json",
+      "prepara": [
+        "ajustes"
+      ]
+    },
+    {
+      "id": "describir",
+      "titulo": "Descripción y capítulos: {tema}",
+      "perfil": "yt-guionista",
+      "skill": "describir",
+      "ejecutor": "hermes",
+      "max_runtime": "5m",
+      "salida": "descripcion.json",
+      "tras": [
+        "descripcion"
+      ]
+    },
+    {
+      "id": "cierre",
+      "titulo": "Cierre del paquete: {tema}",
+      "perfil": "yt-editor-jefe",
+      "skill": "cierre",
+      "ejecutor": "hermes",
+      "max_runtime": "8m",
+      "salida": "cierre.json",
+      "tras": [
+        "paquete"
+      ]
+    }
+  ],
+  "puertas": [
+    {
+      "tipo": "revision",
+      "papel": "marketing"
+    },
+    {
+      "tipo": "datos",
+      "papel": "datos",
+      "si_vacio": "saltar"
+    },
+    {
+      "tipo": "revision-final",
+      "papel": "presentador"
+    }
+  ],
+  "rehacer": "ajustar",
+  "al_aprobar": "nada"
+}

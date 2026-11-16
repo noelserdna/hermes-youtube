@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "slug": "",
+  "nombre": "",
+  "presentador": "",
+  "idioma": "es-ES",
+  "zona_horaria": "Europe/Madrid",
+  "pilares": [],
+  "formatos": [],
+  "reglas": {
+    "titulo_max": 55,
+    "titulos_internos": 30,
+    "titulos_presentados": 5,
+    "miniaturas": 3,
+    "ppm": 150,
+    "ppm_medido": 0,
+    "minutos": [13, 15],
+    "intro_max_palabras": 75,
+    "promesa_extra_palabras": 25,
+    "rondas_max": 3,
+    "temas_por_pilar": 3,
+    "reenganches": 2
+  },
+  "prohibidas": [],
+  "cierres_prohibidos": [],
+  "titulo_cliches": [],
+  "excluido": [],
+  "sin_promesas": [],
+  "nombres_vetados": [],
+  "transcripcion": {
+    "correcciones": {},
+    "ruido": []
+  },
+  "marca": {},
+  "descripcion_pie": "",
+  "personas": {},
+  "permite": {
+    "promesas_empleo": false,
+    "cifras_propias": false,
+    "nombrar_equipo": false
+  },
+  "politicas": {
+    "pausado": false,
+    "tope_semanal": 0
+  },
+  "modelos": {},
+  "ejecutores": {},
+  "telegram": {
+    "chat_id": "",
+    "thread_id": ""
+  },
+  "extensiones": []
+}

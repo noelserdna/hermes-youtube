@@ -1,0 +1,10 @@
+{
+  "name": "hermes-youtube",
+  "label": "YouTube",
+  "description": "Tus canales de YouTube: qué hay en marcha y qué espera tu decisión (medio dashboard, solo lectura; firma el notario).",
+  "icon": "Youtube",
+  "version": "0.1.0",
+  "tab": { "path": "/youtube", "position": "end" },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}

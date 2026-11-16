@@ -1,0 +1,25 @@
+{
+  "id": "inventario",
+  "nombre": "Inventario de una fuente",
+  "descripcion": "Recorre una fuente del canal y extrae las piezas que pueden sostener un vídeo, cada una con su cita literal y su minuto. Solo entran al inventario las piezas cuya cita está en la fuente.",
+  "parametros": {
+    "fuente": "La fuente, como <colección>/<id>"
+  },
+  "etapas": [
+    {
+      "id": "inventario",
+      "titulo": "Inventario de {fuente}",
+      "perfil": "yt-analista",
+      "skill": "inventario",
+      "ejecutor": "claude",
+      "max_runtime": "60m",
+      "salida": "piezas.json",
+      "prepara": [
+        "fuente"
+      ],
+      "tras": [
+        "piezas"
+      ]
+    }
+  ]
+}

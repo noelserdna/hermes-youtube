@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# hyt: acciones de la coordinadora y de quien administra (ver plugin/hermes-youtube/hyt_cli.py y `hyt -h`).
+ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+exec python3 "$ROOT/plugin/hermes-youtube/hyt_cli.py" "$@"

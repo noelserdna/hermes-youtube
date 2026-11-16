@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "nota": "Fórmulas de apertura. Cada una dice qué forma tiene, un ejemplo de un canal inventado de cocina y cuándo falla. Las tres intros de un guion salen de fórmulas distintas, y el canal lleva la cuenta de cuáles ha usado para no abrir siempre igual. El esquema se inspira en youtube-agent-skill (MIT); las fórmulas y los ejemplos son propios.",
+  "reglas": [
+    "La primera frase confirma lo que prometió el título. Una apertura que ignora su título es por lo que la gente se va en los primeros segundos.",
+    "Una sola idea. Una apertura con dos promesas no cumple ninguna.",
+    "Lo concreto gana a lo grande: «doce años y cuarenta mesas» pesa más que «mucha experiencia».",
+    "Nunca se abre diciendo quién eres ni pidiendo nada. Eso se gana después.",
+    "Solo se usa una cifra, un caso o un nombre que esté en el material del tema."
+  ],
+  "ganchos": [
+    {"id": "cifra", "nombre": "La cifra", "forma": "Un número que el espectador no conocía, dicho sin adornos, y después su consecuencia.", "ejemplo": "Siete de cada diez arroces se pasan por la misma razón. Y no es el tiempo.", "falla_cuando": "La cifra no está en el material o no cambia nada para quien mira."},
+    {"id": "caso-ajeno", "nombre": "El caso de otro", "forma": "Lo que le pasó a alguien con nombre o a un caso real, y después el mecanismo.", "ejemplo": "Un restaurante de cuarenta mesas dejó de tirar arroz el día que cambió una sola cosa.", "falla_cuando": "El caso lleva datos personales que el canal no permite, o no se puede comprobar."},
+    {"id": "error", "nombre": "El error", "forma": "Nombra el fallo que el espectador está cometiendo ahora mismo.", "ejemplo": "Si mides el arroz con el vaso y el agua a ojo, ya sé cómo te queda.", "falla_cuando": "El error es tan obvio que nadie se reconoce en él."},
+    {"id": "contra", "nombre": "A la contra", "forma": "Di el consejo que todo el mundo da y recházalo.", "ejemplo": "Te han dicho que no remuevas el arroz. Remuévelo. Te explico cuándo.", "falla_cuando": "Llevar la contraria es pose: después hay que sostenerlo con material."},
+    {"id": "revelacion", "nombre": "Lo que vas a ver", "forma": "Promete enseñar una cosa concreta y enséñala.", "ejemplo": "En este vídeo ves la cazuela por dentro, minuto a minuto, hasta que el grano se abre.", "falla_cuando": "Lo prometido tarda demasiado en aparecer."},
+    {"id": "reloj", "nombre": "El reloj", "forma": "Acota en tiempo lo que el espectador va a conseguir.", "ejemplo": "En lo que hierve el agua vas a entender por qué se te pega el arroz.", "falla_cuando": "El plazo no se cumple dentro del vídeo."},
+    {"id": "lo-probe", "nombre": "Lo probé", "forma": "Un experimento en primera persona, con lo que costó.", "ejemplo": "Cocí el mismo arroz de seis maneras en una tarde. Solo dos salieron bien.", "falla_cuando": "La experiencia no es de quien presenta o no está en sus fuentes."},
+    {"id": "pregunta", "nombre": "La pregunta", "forma": "La pregunta exacta que el espectador ha escrito en el buscador.", "ejemplo": "¿Cuánta agua lleva el arroz? Depende de una cosa que casi nadie mira.", "falla_cuando": "La pregunta se responde sola o es demasiado general."},
+    {"id": "antes-despues", "nombre": "Antes y después", "forma": "Dos estados y un solo corte entre ellos.", "ejemplo": "Este arroz está pasado. Este no. La diferencia son cien mililitros.", "falla_cuando": "La diferencia entre los dos estados no se explica con una sola causa."},
+    {"id": "despiece", "nombre": "El despiece", "forma": "Desmonta delante del espectador algo real que ya conoce.", "ejemplo": "Vamos a abrir la receta del paquete y a ver qué parte sobra.", "falla_cuando": "Lo que se desmonta no es reconocible."},
+    {"id": "aviso", "nombre": "El aviso", "forma": "Un coste que el espectador está a punto de pagar.", "ejemplo": "Antes de comprar otra arrocera, mira esto: el problema no está en el cacharro.", "falla_cuando": "Suena a alarma para algo que no tiene importancia."},
+    {"id": "lista", "nombre": "La lista", "forma": "Un conjunto contado, con el número en la primera frase.", "ejemplo": "Hay tres fallos que estropean un arroz. El segundo lo cometes sin darte cuenta.", "falla_cuando": "La lista es relleno: cada elemento tiene que merecer su sitio."},
+    {"id": "prueba", "nombre": "La prueba primero", "forma": "Enseña el resultado y explícalo después.", "ejemplo": "Así queda. Suelto, entero y con su fondo. Ahora te cuento cómo.", "falla_cuando": "El resultado no impresiona por sí solo."},
+    {"id": "desde-dentro", "nombre": "Desde dentro", "forma": "Algo que solo sabe quien ha trabajado dentro.", "ejemplo": "En una cocina profesional nadie mide el tiempo del arroz. Miden otra cosa.", "falla_cuando": "Quien presenta no ha estado dentro, o lo cuenta como un secreto que no lo es."},
+    {"id": "imposible", "nombre": "Lo que parece mentira", "forma": "Afirma algo que suena falso y demuéstralo.", "ejemplo": "Se puede hacer un arroz sin mirarlo ni una vez. Y sale mejor.", "falla_cuando": "La demostración no llega o depende de un truco."},
+    {"id": "comparacion", "nombre": "La comparación", "forma": "Dos opciones con nombre y una que gana.", "ejemplo": "Arroz redondo o largo: para esto solo vale uno, y no es el que usas.", "falla_cuando": "No hay un ganador claro y el vídeo acaba en «depende»."},
+    {"id": "origen", "nombre": "De dónde sale", "forma": "De dónde viene de verdad un resultado.", "ejemplo": "El sabor de un arroz no está en el arroz. Está en lo que pasó antes de echarlo.", "falla_cuando": "El origen es un dato curioso que no cambia lo que hace el espectador."},
+    {"id": "a-ti", "nombre": "A ti", "forma": "Nombra al espectador exacto en las primeras palabras.", "ejemplo": "Si cocinas para cuatro y siempre te sobra o te falta, esto es para ti.", "falla_cuando": "El retrato es tan amplio que cabe cualquiera."},
+    {"id": "no-es", "nombre": "No es eso, es esto", "forma": "Corrige de entrada lo que la gente cree que es una cosa.", "ejemplo": "Un sofrito no es cebolla frita. Es paciencia y fuego bajo.", "falla_cuando": "Nadie creía lo primero."},
+    {"id": "dilema", "nombre": "El dilema", "forma": "Una pregunta con dos salidas que obliga a tomar partido.", "ejemplo": "¿Vas a seguir tirando arroz cada domingo o vas a medir el agua una vez?", "falla_cuando": "Una de las dos salidas es absurda y la pregunta suena a venta."}
+  ]
+}

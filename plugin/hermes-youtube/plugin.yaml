@@ -1,0 +1,5 @@
+name: hermes-youtube
+version: 0.1.0
+description: "Guiones de YouTube a partir del material propio de cada canal, con agentes: pipelines como datos, revisión mecánica, puertas en Telegram y notario. La persona decide; ningún agente aprueba ni publica."
+author: "Andres Leon"
+provides_hooks: [pre_llm_call]

@@ -64,7 +64,9 @@ cp -R "$DEST/plugin/hermes-youtube" "$HH/plugins/hermes-youtube"
 "$HERMES" plugins enable hermes-youtube >/dev/null 2>&1 || echo "AVISO: no pude activar el plugin (hermes plugins enable hermes-youtube)"
 ln -sfn "$ARNES/hyt" "$HOME/.local/bin/hyt"
 # ── 4. perfiles ─────────────────────────────────────────────────────────────────────────────────────────────────────
-existe() { "$HERMES" profile list 2>/dev/null | grep -qw "$1"; }
+# la carpeta del perfil, no «hermes profile list | grep -q»: con pipefail, grep -q cierra la tubería, la lista muere
+# por SIGPIPE y la segunda instalación creía que no había perfiles (y fallaba al crearlos)
+existe() { [ -d "$HH/profiles/$1" ] || "$HERMES" profile list 2>/dev/null | grep -w "$1" >/dev/null; }
 copiar_modelo() {  # mismo proveedor y modelo que el perfil principal; solo las claves del proveedor (nunca las del bot)
   local P=$1 PD="$HH/profiles/$1" k v
   for k in provider base_url api_mode default; do

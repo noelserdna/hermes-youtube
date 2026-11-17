@@ -23,8 +23,8 @@ ok(manifest["name"] == "hermes-youtube" and manifest["label"] == "YouTube" and m
 js = (ROOT / "plugin/hermes-youtube/dashboard/dist/index.js").read_text()
 ok('const API = "/api/plugins/hermes-youtube"' in js and 'register("hermes-youtube"' in js and '"/canales"' in js, "la pestaña llama a /api/plugins/hermes-youtube")
 ok(all(x in js for x in ('"/videos/"', '"/datos"', '"/datos/" + p.puerta + "/aprobar"', '"/publicados/"', '"/acciones/"', '"/exportar/"', "navigator.clipboard", ".select()"))
-   and all(f'["{n}"' in js for n in ("Canales", "Vídeos", "Datos por verificar", "Publicados", "Acciones", "Decisiones")),
-   "la pestaña tiene sus seis secciones, llama a las rutas nuevas y copia con el portapapeles (o seleccionando el texto)")
+   and all(f'["{n}"' in js for n in ("Canales", "Vídeos", "Datos por verificar", "Publicados", "Acciones", "Decisiones", "Configuración")) and '"/config/"' in js,
+   "la pestaña tiene sus siete secciones, llama a las rutas nuevas y copia con el portapapeles (o seleccionando el texto)")
 
 SESION = {"email": "ana@ejemplo.com"}
 app = FastAPI(); app.include_router(m.router, prefix="/api/plugins/hermes-youtube")
@@ -174,4 +174,61 @@ r = cli.post(A + "/acciones/demo/marcar", json={"encargo": ya["id"], "estado": "
 pub = cli.get(A + "/publicados/demo").json()
 ok(r.json()["estado_id"] == "publicado" and [(p["titulo"], p["url"]) for p in pub] == [("Caldo corto: se vigila", "https://ejemplo.com/v/2")], "marcar publicado: entra en la lista de publicados con su dirección")
 ok(all(cli.get(A + r).status_code == 404 for r in ("/webs", "/metricas/demo", "/cambios/demo")), "las rutas que no se han portado no existen")
+# ── configuración: se ve entera (sin claves), solo se cambia lo seguro, queda en el historial ──
+(T / "home/canales/demo/secretos.env").write_text("TOKEN_SECRETO=abc123xyz\n")
+m.C.config("demo", "telegram", {"chat_id": "-100777", "thread_id": "9"})
+ext = T / "home/canales/demo/extensiones/pipelines"; ext.mkdir(parents=True, exist_ok=True)
+(ext / "guion.json").write_text(json.dumps({"id": "guion", "hereda": "guion", "cambia": {"documentar": {"ejecutor": "claude"}}}))
+c = cli.get(A + "/config/demo").json()
+ed = {x["clave"]: x for x in c["editables"]}
+ok(c["nombre"] == "Canal Demo" and c["canal"]["Presenta"] == "Persona Ejemplo" and c["canal"]["Idioma"] == "es-ES"
+   and c["pilares"] == [{"id": "oficio", "nombre": "El oficio", "tipo": "pilar"}] and c["capacidades"] == ["pilares"],
+   "la configuración del canal: nombre, quién presenta, idioma y pilares")
+ok(ed["reglas.ppm"]["valor"] == 150 and (ed["reglas.ppm"]["min"], ed["reglas.ppm"]["max"]) == (60, 300) and ed["reglas.minutos"]["valor"] == [13, 15]
+   and ed["prohibidas"]["tipo"] == "lista" and ed["descripcion_pie"]["tipo"] == "texto", "con sus campos editables, su valor y sus límites")
+pl = m._cargar("hyt_canales").plantilla()
+ok(all(k in pl["reglas"] for k in (x.split(".", 1)[1] for x in ed if x.startswith("reglas."))) and all(k in pl for k in ed if "." not in k),
+   "todo lo editable existe en la plantilla del canal")
+ok({p["clave"]: (p["correo"], p["roles"]) for p in c["personas"]} == {"ana": ("", ["datos", "marketing"]), "bea": ("", ["presentador"])}
+   and c["permite"] == {"promesas_empleo": False, "cifras_propias": False, "nombrar_equipo": False}, "las personas con su papel y lo que el canal permite")
+g = next(p for p in c["como_trabaja"] if p["id"] == "guion")
+ok({p["id"] for p in c["como_trabaja"]} >= {"guion", "propuesta", "titulo-miniatura"} and [e["id"] for e in g["etapas"]][0] == "documentar"
+   and all(e["skill"] and e["ejecutor"] in ("Hermes", "Claude Code") and e["modelo"] for e in g["etapas"])
+   and [x["tipo"] for x in g["puertas"]][1] == "datos" and g["puertas"][1]["papel"] == "datos",
+   "cómo trabaja: cada pipeline con sus etapas (skill, ejecutor y modelo) y sus puertas")
+ok(g["propia"] is True and g["hereda"] == "guion" and g["etapas"][0]["ejecutor"] == "Claude Code"
+   and not next(p for p in c["como_trabaja"] if p["id"] == "propuesta")["propia"], "una pipeline adaptada por el canal lo dice, y de cuál hereda")
+ok(not any(x in json.dumps(c) for x in ("secretos", "TOKEN", "abc123xyz", "-100777")) and any(x["clave"] == "telegram" for x in c["historial"]),
+   "ninguna clave en la vista, ni el chat de avisos (tampoco en el historial, donde solo consta que cambió)")
+r = cli.post(A + "/config/demo", json={"clave": "reglas.ppm", "valor": "160"})
+ok(r.status_code == 200 and m.C.leer("demo")["reglas"]["ppm"] == 160, "cambiar un número de las reglas")
+ok(cli.post(A + "/config/demo", json={"clave": "reglas.minutos", "valor": "10-12"}).status_code == 200 and m.C.leer("demo")["reglas"]["minutos"] == [10, 12],
+   "la duración, como mínimo-máximo")
+ok(cli.post(A + "/config/demo", json={"clave": "prohibidas", "valor": "increíble\n\n  brutal \n"}).status_code == 200
+   and m.C.leer("demo")["prohibidas"] == ["increíble", "brutal"], "una lista, una línea por elemento")
+ok(cli.post(A + "/config/demo", json={"clave": "descripcion_pie", "valor": "42"}).status_code == 200 and m.C.leer("demo")["descripcion_pie"] == "42",
+   "un texto se guarda como texto")
+ok(all(cli.post(A + "/config/demo", json={"clave": k, "valor": v}).status_code == 403 for k, v in (
+    ("personas", {}), ("personas.ana.correo", "x@ejemplo.com"), ("personas.bea.roles", ["marketing"]), ("ejecutores.documentar", "claude"),
+    ("modelos.escribir", "opus"), ("permite.cifras_propias", True), ("telegram.chat_id", "1"), ("politicas.pausado", True), ("nombre", "Otro"),
+    ("reglas.inventada", 3), (None, 1))), "personas, papeles, ejecutores, modelos, permite y lo que no existe no se cambian desde el panel")
+ok(all(cli.post(A + "/config/demo", json={"clave": k, "valor": v}).status_code == 422 for k, v in (
+    ("reglas.ppm", "rápido"), ("reglas.ppm", 150.5), ("reglas.ppm", True), ("reglas.minutos", "13"), ("reglas.minutos", [13, "x"]),
+    ("prohibidas", 7), ("prohibidas", ["a", 3]), ("descripcion_pie", ["x"]))), "un valor mal formado: 422")
+ok(cli.post(A + "/config/demo", json={"clave": "reglas.ppm", "valor": 9999}).status_code == 409
+   and cli.post(A + "/config/demo", json={"clave": "reglas.minutos", "valor": [15, 13]}).status_code == 409
+   and cli.post(A + "/config/demo", json={"clave": "reglas.titulos_presentados", "valor": 99}).status_code == 409
+   and m.C.leer("demo")["reglas"]["ppm"] == 160, "lo que la validación rechaza no se guarda")
+hist = cli.get(A + "/config/demo").json()["historial"]
+ok(hist[0]["quien"] == "panel:ana" and hist[0]["clave"] == "descripcion_pie" and any(x["clave"] == "reglas.ppm" and (x["antes"], x["despues"]) == ("150", "160") for x in hist)
+   and len(hist) <= 15, "queda en el historial con quién, el antes y el después")
+SESION["email"] = "bea@ejemplo.com"
+ok(cli.get(A + "/config/demo").status_code == 200 and cli.post(A + "/config/demo", json={"clave": "reglas.ppm", "valor": 140}).status_code == 403
+   and m.C.leer("demo")["reglas"]["ppm"] == 160, "quien no lleva marketing ve la configuración, pero no la cambia")
+SESION["email"] = "otro@ejemplo.com"
+ok(cli.get(A + "/config/demo").status_code == 403 and cli.post(A + "/config/demo", json={"clave": "reglas.ppm", "valor": 140}).status_code == 403
+   and cli.post(A + "/config/demo", json={"clave": "personas", "valor": {}}).status_code == 403, "quien no está en aprobadores ni la ve ni la cambia")
+SESION["email"] = "ana@ejemplo.com"
+ok(cli.get(A + "/config/no-existe").status_code == 409 and cli.post(A + "/config/no-existe", json={"clave": "reglas.ppm", "valor": 140}).status_code == 404,
+   "la configuración de un canal que no existe: 409 al verla, 404 al cambiarla")
 sys.exit(1 if fallos else 0)

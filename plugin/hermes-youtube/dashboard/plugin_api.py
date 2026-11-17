@@ -5,6 +5,11 @@ panel: verificar los datos uno a uno (quien tiene el papel de esa puerta), dar l
 la lista de publicados y las acciones de marketing (pedir una propuesta, un tema propio, marcar grabado o publicado y
 exportar un vídeo aprobado). Las demás puertas se deciden por correo o en Telegram: aquí son de solo lectura.
 
+También enseña la configuración entera de cada canal (sin claves) y deja cambiar solo lo seguro: los números de sus
+reglas, sus listas de textos y el pie de la descripción. Las personas, sus papeles, los ejecutores, los modelos y lo que
+el canal permite no se cambian desde el panel (con la coordinadora). Cada cambio queda en config.jsonl del canal con
+«panel:<persona>».
+
 La identidad sale de la sesión del panel (con login: el email o el id de la cuenta; en modo local, 127.0.0.1 y sin
 login: el usuario del sistema). Debe figurar en aprobadores.json con el medio "dashboard". Copiado y adaptado de
 hermes-sdd (dashboard/plugin_api.py).
@@ -13,6 +18,8 @@ from __future__ import annotations
 
 import getpass
 import importlib.util
+import json
+import re
 import socket
 import sys
 from pathlib import Path
@@ -245,3 +252,164 @@ async def accion_marcar(slug: str, request: Request):
 async def exportar(slug: str, encargo: str, parte: str, request: Request):
     _marketing(request, slug)
     return await run_in_threadpool(lambda: _accion(lambda: {"parte": parte, "texto": _V().exportar(slug, encargo, parte)}))
+
+
+# ── configuración de cada canal: se ve entera (sin claves); solo se cambia lo seguro ────────────────────────────────
+# (clave, etiqueta, tipo, ayuda). tipo: numero | rango | lista | texto. Lo que no está aquí no se cambia desde el panel.
+EDITABLES = [
+    ("reglas.minutos", "Duración del vídeo (minutos)", "rango", "Mínimo y máximo, p. ej. 13-15."),
+    ("reglas.ppm", "Palabras por minuto", "numero", "El ritmo con el que se calcula la duración del guion."),
+    ("reglas.ppm_medido", "Palabras por minuto medidas", "numero", "Las de quien presenta, medidas en sus vídeos; 0 = sin medir."),
+    ("reglas.titulo_max", "Largo máximo del título (caracteres)", "numero", ""),
+    ("reglas.titulos_internos", "Títulos que se generan", "numero", "Los que se barajan antes de elegir."),
+    ("reglas.titulos_presentados", "Títulos que se presentan", "numero", "No puede ser mayor que los que se generan."),
+    ("reglas.miniaturas", "Miniaturas que se proponen", "numero", ""),
+    ("reglas.intro_max_palabras", "Largo máximo de la intro (palabras)", "numero", ""),
+    ("reglas.promesa_extra_palabras", "Palabras de más para la promesa", "numero", ""),
+    ("reglas.rondas_max", "Rondas de cambios como máximo", "numero", ""),
+    ("reglas.temas_por_pilar", "Temas por pilar en cada propuesta", "numero", ""),
+    ("reglas.reenganches", "Reenganches en el guion", "numero", ""),
+    ("formatos", "Formatos de vídeo", "lista", "Uno por línea."),
+    ("prohibidas", "Palabras y expresiones prohibidas", "lista", "Una por línea."),
+    ("cierres_prohibidos", "Cierres prohibidos", "lista", "Uno por línea."),
+    ("titulo_cliches", "Clichés de título que no se usan", "lista", "Uno por línea."),
+    ("nombres_vetados", "Nombres que no se mencionan", "lista", "Uno por línea."),
+    ("descripcion_pie", "Pie de la descripción", "texto", "Lo que va al final de la descripción de cada vídeo."),
+]
+EDITABLE = {c: t for c, _, t, _ in EDITABLES}
+NO_PANEL = ("Eso no se cambia desde el panel: las personas, sus papeles, los ejecutores, los modelos, lo que el canal "
+            "permite y las claves, con la coordinadora.")
+
+
+def _valor(cfg: dict, clave: str):
+    v = cfg
+    for p in clave.split("."):
+        v = v.get(p) if isinstance(v, dict) else None
+    return v
+
+
+def _como_trabaja(slug: str, cfg: dict) -> list:
+    PL, M = _cargar("hyt_pipelines"), _cargar("hyt_modelos")
+    propios = cfg.get("ejecutores") or {}
+    out = []
+    for pid, p in sorted(PL.listar(slug).items()):
+        etapas = []
+        for s in p.get("etapas", []):
+            if not isinstance(s, dict) or not s.get("id"):
+                continue
+            ej = propios.get(s["id"]) or s.get("ejecutor", "hermes")
+            try:
+                mod = M.para(s["id"], ej, slug, s.get("perfil"))
+            except Exception:   # noqa: BLE001
+                mod = ""
+            etapas.append({"id": s["id"], "skill": s.get("skill"), "ejecutor": "Claude Code" if ej == "claude" else "Hermes",
+                           "modelo": mod or "el del perfil"})
+        out.append({"id": pid, "nombre": p.get("nombre", pid), "propia": "/canales/" in str(p.get("_origen", "")),
+                    "hereda": p.get("_hereda"), "etapas": etapas,
+                    "puertas": [{"tipo": g.get("tipo"), "papel": g.get("papel", "")} for g in PL.puertas_de(p)]})
+    return out
+
+
+RESERVADO = ("telegram",)   # adónde se avisa: no se enseña en el panel, tampoco en el historial
+
+
+def _historial(slug: str) -> list:
+    out = []
+    try:
+        lineas = (C.carpeta(slug) / "config.jsonl").read_text().splitlines()[-15:]
+    except OSError:
+        return out
+    for l in lineas:
+        try:
+            r = json.loads(l)
+        except ValueError:
+            continue
+        clave = str(r.get("clave") or r.get("accion") or "")
+        reservado = clave.split(".")[0] in RESERVADO   # se ve que cambió, no el valor
+        out.append({"ts": r.get("ts"), "quien": r.get("quien"), "clave": clave,
+                    "antes": "…" if reservado else json.dumps(r.get("antes"), ensure_ascii=False)[:160],
+                    "despues": "…" if reservado else json.dumps(r.get("despues"), ensure_ascii=False)[:160]})
+    return list(reversed(out))
+
+
+@router.get("/config/{slug}")
+async def ver_config(slug: str, request: Request):
+    _actor(request)
+    def hacer():
+        cfg = _accion(lambda: C.leer(slug))
+        pol, tr = cfg.get("politicas") or {}, cfg.get("transcripcion") or {}
+        limites = {f"reglas.{k}": v for k, v in C.REGLAS.items()}
+        editables = []
+        for clave, etiqueta, tipo, ayuda in EDITABLES:
+            e = {"clave": clave, "etiqueta": etiqueta, "tipo": tipo, "ayuda": ayuda, "valor": _valor(cfg, clave)}
+            if clave in limites:
+                e["min"], e["max"] = limites[clave]
+            editables.append(e)
+        return {
+            "slug": slug, "nombre": cfg["nombre"],
+            "canal": {"Nombre": cfg["nombre"], "Presenta": cfg.get("presentador"), "Idioma": cfg.get("idioma"),
+                      "Zona horaria": cfg.get("zona_horaria"), "En pausa": "sí" if pol.get("pausado") else "no",
+                      "Vídeos nuevos por semana (tope)": pol.get("tope_semanal") or "sin tope",
+                      "Extensiones": ", ".join(cfg.get("extensiones") or [])},
+            "pilares": [{"id": p.get("id"), "nombre": p.get("nombre"), "tipo": p.get("tipo", "pilar")}
+                        for p in cfg.get("pilares") or [] if isinstance(p, dict)],
+            "editables": editables,
+            "vetos": {"Temas excluidos": [C.texto_patron(x) for x in cfg.get("excluido") or []],
+                      "Promesas que no se hacen": [C.texto_patron(x) for x in cfg.get("sin_promesas") or []],
+                      "Ruido de la transcripción": list(tr.get("ruido") or []),
+                      "Correcciones de la transcripción": [f"{k} → {v}" for k, v in (tr.get("correcciones") or {}).items()]},
+            "marca": {str(k): (v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)) for k, v in (cfg.get("marca") or {}).items()},
+            "personas": [{"clave": k, "nombre": p.get("nombre"), "correo": p.get("correo") or "", "roles": p.get("roles") or []}
+                         for k, p in (cfg.get("personas") or {}).items() if isinstance(p, dict)],
+            "permite": {k: bool(v) for k, v in (cfg.get("permite") or {}).items()},
+            "capacidades": sorted(C.capacidades(cfg)),
+            "como_trabaja": _como_trabaja(slug, cfg), "historial": _historial(slug),
+        }
+    return await run_in_threadpool(hacer)
+
+
+def _numero(x):
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        raise ValueError(x)
+    return int(x) if float(x).is_integer() else x
+
+
+@router.post("/config/{slug}")
+async def cambiar_config(slug: str, request: Request):
+    cuerpo = await _cuerpo(request)
+    clave, valor = cuerpo.get("clave"), cuerpo.get("valor")
+    tipo = EDITABLE.get(clave) if isinstance(clave, str) else None
+    if not tipo:
+        _actor(request)   # quien no tiene acceso al panel ni se entera de qué claves hay
+        raise HTTPException(403, NO_PANEL)
+    persona, _, _ = _marketing(request, slug)
+    if tipo == "numero":
+        if isinstance(valor, str) and re.fullmatch(r"\s*-?\d+\s*", valor):
+            valor = int(valor)
+        if isinstance(valor, bool) or not isinstance(valor, int):
+            raise HTTPException(422, "Un número entero.")
+    elif tipo == "rango":
+        if isinstance(valor, str):
+            valor = [float(x.replace(",", ".")) for x in re.findall(r"\d+(?:[.,]\d+)?", valor)]
+        try:
+            valor = [_numero(x) for x in valor]
+        except (TypeError, ValueError):
+            valor = None
+        if not valor or len(valor) != 2:
+            raise HTTPException(422, "Dos números: el mínimo y el máximo (p. ej. 13-15).")
+    elif tipo == "lista":
+        if isinstance(valor, str):
+            valor = valor.splitlines()
+        if not isinstance(valor, list) or not all(isinstance(x, str) and len(x) <= 300 for x in valor):
+            raise HTTPException(422, "Una lista de textos, uno por línea (de hasta 300 caracteres).")
+        valor = [x.strip() for x in valor if x.strip()]
+        if len(valor) > 200:
+            raise HTTPException(422, "Una lista de hasta 200 líneas.")
+    elif tipo == "texto":
+        if not isinstance(valor, str) or len(valor) > 4000:
+            raise HTTPException(422, "Un texto de hasta 4.000 caracteres.")
+        valor = json.dumps(valor.strip(), ensure_ascii=False)   # C.config lee los textos como JSON: así «42» sigue siendo un texto
+    def hacer():
+        _accion(lambda: C.config(slug, clave, valor, f"panel:{persona}"))
+        return {"ok": True}
+    return await run_in_threadpool(hacer)

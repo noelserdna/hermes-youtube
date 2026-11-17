@@ -3,6 +3,17 @@
 Una pipeline es un JSON en pipelines/<id>.json (del plugin) o en canales/<slug>/extensiones/pipelines/<id>.json (del
 canal: añade pipelines propias o sustituye una del plugin con el mismo id).
 
+Herencia (lo recomendado para adaptar una del plugin): el canal solo escribe lo que cambia y lo demás sigue al plugin,
+así una mejora del plugin (una etapa nueva, otro ejecutor, otra regla) llega a todos los canales:
+
+  {"id": "guion", "hereda": "guion",
+   "cambia": {"escribir": {"max_runtime": "90m"}},            campos que cambian en esas etapas
+   "añade": [{"tras_de": "verificar", "id": "…", …}],         etapas nuevas (sin «tras_de»: al final)
+   "quita": ["retencion"],                                     etapas que el canal no hace
+   "puertas": […], "nombre": "…"}                              el resto de campos sustituye al del plugin
+
+Si el plugin cambia o quita una etapa que el canal nombra, la validación lo dice (no se ignora en silencio).
+
   {"id": "guion", "nombre": "Guion", "descripcion": "…",
    "requiere": ["fuentes"],                  capacidades del canal sin las que no se puede lanzar
    "nueva_pieza": true,                      cuenta para el tope semanal del canal
@@ -33,7 +44,7 @@ CLI:
   hyt_pipelines.py listar [--canal SLUG]
   hyt_pipelines.py ver <id> [--canal SLUG]
   hyt_pipelines.py plan <id> --canal SLUG       etapas que correrían para ese canal
-  hyt_pipelines.py validar-todas
+  hyt_pipelines.py validar-todas [--canal SLUG]
 """
 from __future__ import annotations
 
@@ -87,14 +98,53 @@ def _dirs(slug: str | None) -> list:
     return ds
 
 
+HERENCIA = ("hereda", "cambia", "añade", "quita")
+
+
+def heredar(hija: dict, base: dict | None) -> dict:
+    """La pipeline completa: la del plugin con los cambios del canal. Los errores van en «_herencia» (los ve validar)."""
+    err = []
+    if not base:
+        return {**hija, "_herencia": [f"hereda: no hay pipeline «{hija.get('hereda')}» en el plugin"]}
+    cambia, anade, quita = hija.get("cambia") or {}, hija.get("añade") or [], hija.get("quita") or []
+    if not isinstance(cambia, dict) or not isinstance(anade, list) or not isinstance(quita, list):
+        return {**hija, "_herencia": ["cambia: {etapa: {campos}}; añade y quita: listas"]}
+    ids = [s.get("id") for s in base.get("etapas", [])]
+    for k in list(cambia) + list(quita):
+        if k not in ids:
+            err.append(f"«{k}» no es una etapa de «{base['id']}» en el plugin (¿la renombró o la quitó?)")
+    etapas = [{**s, **(cambia.get(s.get("id")) or {})} for s in base.get("etapas", []) if s.get("id") not in quita]
+    for n in anade:
+        n = dict(n) if isinstance(n, dict) else {}
+        tras = n.pop("tras_de", None)
+        pos = [s.get("id") for s in etapas]
+        if tras is None:
+            etapas.append(n)
+        elif tras in pos:
+            etapas.insert(pos.index(tras) + 1, n)
+        else:
+            err.append(f"añade: «{tras}» no es una etapa de la pipeline heredada")
+    resto = {k: v for k, v in hija.items() if k not in HERENCIA}
+    out = {**{k: v for k, v in base.items() if not k.startswith("_")}, **resto, "etapas": etapas,
+           "_hereda": hija["hereda"]}
+    if err:
+        out["_herencia"] = err
+    return out
+
+
 def listar(slug: str | None = None) -> dict:
-    """{id: pipeline}; las del canal sustituyen a las del plugin con el mismo id."""
-    out = {}
-    for d in _dirs(slug):
+    """{id: pipeline}; las del canal sustituyen a las del plugin con el mismo id, o heredan de una con «hereda»."""
+    out, plugin = {}, {}
+    for i, d in enumerate(_dirs(slug)):
         for f in sorted(d.glob("*.json")) if d.is_dir() else []:
             p = B.leer(f)
-            if isinstance(p, dict) and p.get("id"):
-                out[p["id"]] = {**p, "_origen": str(f)}
+            if not (isinstance(p, dict) and p.get("id")):
+                continue
+            if i and p.get("hereda"):
+                p = heredar(p, plugin.get(p["hereda"]))
+            out[p["id"]] = {**p, "_origen": str(f)}
+            if not i:
+                plugin[p["id"]] = out[p["id"]]
     return out
 
 
@@ -147,7 +197,7 @@ def _valida_puerta(g, donde: str) -> list:
 
 
 def validar(p: dict) -> list:
-    e = []
+    e = list(p.get("_herencia") or [])
     if not ID.match(str(p.get("id", ""))):
         e.append("id: minúsculas, números y guiones")
     if not p.get("nombre"):
@@ -275,7 +325,7 @@ def main(argv=None) -> int:
     l = sub.add_parser("listar"); l.add_argument("--canal")
     v = sub.add_parser("ver"); v.add_argument("id"); v.add_argument("--canal")
     pl = sub.add_parser("plan"); pl.add_argument("id"); pl.add_argument("--canal", required=True)
-    sub.add_parser("validar-todas")
+    vt = sub.add_parser("validar-todas"); vt.add_argument("--canal")
     x = ap.parse_args(argv)
     try:
         if x.cmd == "listar":
@@ -293,7 +343,7 @@ def main(argv=None) -> int:
                 print(f"🚪 {g['tipo']}" + (f" ({g['papel']})" if g.get("papel") else ""))
         elif x.cmd == "validar-todas":
             mal = 0
-            for pid, p in listar().items():
+            for pid, p in listar(x.canal).items():
                 err = validar(p)
                 if err:
                     mal += 1

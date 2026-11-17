@@ -158,6 +158,10 @@ El plugin es agnóstico: nada de un canal concreto vive en el código, las skill
 Un canal de una sola persona puede dejar una única puerta. Los datos de cada canal viven solo en la máquina de
 Hermes, nunca en este repositorio.
 
+Un canal no copia las pipelines del plugin: si necesita un recorrido distinto, hereda la del plugin y escribe solo lo
+que cambia (`hereda`, `cambia`, `añade`, `quita`). Así una mejora del plugin llega a todos los canales. Todas las etapas
+las ejecuta Hermes; Claude Code es una opción que cada canal puede activar por etapa.
+
 ## Qué no hace
 
 - No publica en YouTube ni en ninguna otra plataforma.

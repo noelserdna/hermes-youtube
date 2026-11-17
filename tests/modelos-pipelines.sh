@@ -156,4 +156,30 @@ assert rechaza(lambda: PL.politicas("propuesta", "demo", hoy=hoy))
 assert rechaza(lambda: PL.politicas("guion", "demo", excepcion=True, hoy=hoy))   # la pausa no tiene excepción
 assert "congelado_hasta" not in json.dumps(C.plantilla())
 PY
+
+# ── herencia: el canal solo dice lo que cambia; lo demás sigue al plugin ──
+X="$K/demo/extensiones/pipelines"; mkdir -p "$X"
+etapa() { $PL ver "$1" --canal demo | python3 -c "import json,sys;p=json.load(sys.stdin);print(' '.join(s['id']+':'+str(s.get('$3','')) for s in p['etapas'] if s['id']=='$2' or '$2'=='*'))"; }
+cat > "$X/guion.json" <<'J'
+{"id": "guion", "hereda": "guion", "descripcion": "propia",
+ "cambia": {"escribir": {"max_runtime": "90m", "ejecutor": "claude"}},
+ "añade": [{"tras_de": "verificar", "id": "extra", "titulo": "Extra", "perfil": "yt-editor-jefe", "skill": "cierre", "salida": "extra.md"}],
+ "quita": ["retencion"],
+ "puertas": [{"tipo": "revision", "papel": "presentador"}]}
+J
+igual "herencia: cambia solo esos campos" "$(etapa guion escribir max_runtime) $(etapa guion escribir ejecutor)" "escribir:90m escribir:claude"
+igual "herencia: lo demás viene del plugin" "$(etapa guion escribir skill) $(etapa guion verificar skill)" "escribir:escribir-guion verificar:verificar"
+igual "herencia: añade tras una etapa y quita otra" "$(etapa guion '*' id | tr ' ' '\n' | cut -d: -f1 | tr '\n' ' ')" "documentar escaleta escribir verificar extra voz ajustar describir cierre "
+igual "herencia: un canal de una persona deja una sola puerta" "$($PL ver guion --canal demo | python3 -c 'import json,sys;p=json.load(sys.stdin);print(len(p["puertas"]), p["puertas"][0]["papel"], p["descripcion"], p["_hereda"], "tema" in json.dumps(p["parametros"]))')" "1 presentador propia guion True"
+si "herencia: una pipeline heredada es válida" "! $PL validar-todas --canal demo | grep -q '^guion:'"
+si "herencia: el plan la usa" "$PL plan guion --canal demo | grep -q extra"
+igual "herencia: otro canal sigue con la del plugin" "$($C alta otro 'Otro' 'Persona Dos' >/dev/null; $PL ver guion --canal otro | python3 -c 'import json,sys;p=json.load(sys.stdin);print(len(p["etapas"]), len(p["puertas"]))')" "9 3"
+echo '{"id": "guion", "hereda": "guion", "cambia": {"redactor-viejo": {"skill": "x"}}}' > "$X/guion.json"
+si "herencia: nombrar una etapa que el plugin no tiene es un error" "{ $PL validar-todas --canal demo || true; } | grep -q '^guion:.*redactor-viejo'"
+no "herencia: y no se puede lanzar" "$PL plan guion --canal demo"
+echo '{"id": "otra", "hereda": "no-existe", "nombre": "x"}' > "$X/guion.json"
+si "herencia: de una pipeline que no existe, error" "{ $PL validar-todas --canal demo || true; } | grep -q '^otra:.*no-existe'"
+rm -f "$X/guion.json"
+igual "el plugin lo hace todo con Hermes (Claude Code solo si el canal lo pide)" "$(python3 -c "import json,glob;print(set(s.get('ejecutor','hermes') for f in glob.glob('$ROOT/pipelines/*.json') for s in json.load(open(f))['etapas']))")" "{'hermes'}"
+
 exit $fail

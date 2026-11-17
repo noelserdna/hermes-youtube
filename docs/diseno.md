@@ -132,6 +132,23 @@ de cita que se quitan al exportar. El cierre no anuncia el final ni vende nada: 
 Cadena de puertas por defecto: `revision` (marketing) → `datos` → `revision-final` (presentador). Cada canal puede
 cambiarla.
 
+### Un plugin para todos los canales
+
+El plugin tiene un solo recorrido para todos los canales; lo que distingue a un canal es su configuración (`canal.json`)
+y su memoria, no una copia de las pipelines. Así un cambio en el plugin llega a todos los canales al actualizarlo.
+
+- **Quién ejecuta**: todas las etapas las hace Hermes con el perfil de su rol. Un canal puede pedir Claude Code para
+  una etapa con `ejecutores.<etapa>` en su `canal.json`; el plugin nunca lo pone por defecto.
+- **Herencia**: si un canal necesita un recorrido distinto, no copia la pipeline: escribe en
+  `canales/<slug>/extensiones/pipelines/<id>.json` solo lo que cambia, con `hereda` y `cambia`, `añade` o `quita`. Lo
+  demás sigue al plugin. Un canal de una sola persona, por ejemplo, hereda `guion` y deja una única puerta.
+- **Sin sorpresas**: si el plugin renombra o quita una etapa que un canal nombra, la validación lo dice
+  (`hyt_pipelines.py validar-todas --canal <slug>`) y esa pipeline no se puede lanzar hasta arreglarlo.
+- **En el panel**: la sección «Configuración» de cada canal enseña su configuración entera y cómo trabaja (etapas,
+  quién las ejecuta, con qué modelo, de qué pipeline hereda). Desde ahí solo se cambian los valores seguros (reglas
+  numéricas, duración, listas de expresiones vetadas, formatos y pie de la descripción); personas, papeles, ejecutores
+  y modelos no. Cada cambio queda en el historial del canal con quién lo hizo.
+
 ## 6. Puertas
 
 - **Opciones**: aprobar, rehacer (con comentario) o rechazar (con comentario). Los revisores no editan el texto.

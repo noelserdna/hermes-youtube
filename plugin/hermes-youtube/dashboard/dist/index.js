@@ -220,6 +220,81 @@
         exp ? h("div", null, h("div", { style: { ...tenue, marginTop: 10 } }, "«" + exp.titulo + "» · " + exp.parte), h(Exportado, { key: exp.titulo + exp.parte, texto: exp.texto })) : null)));
   }
 
+  // ── configuración del canal: se ve entera; solo se cambia lo seguro (reglas, listas y el pie de la descripción) ──
+  function Tabla({ datos }) {
+    return h("table", { style: { width: "100%", fontSize: 13, borderCollapse: "collapse" } }, h("tbody", null,
+      Object.entries(datos).map(([k, v]) => h("tr", { key: k },
+        h("td", { style: { padding: "3px 8px 3px 0", ...tenue, width: "38%", verticalAlign: "top" } }, k),
+        h("td", { style: { padding: 3, wordBreak: "break-word" } }, v == null || v === "" ? "—" : String(v))))));
+  }
+
+  function CampoConfig({ slug, c, alGuardar }) {
+    const aTexto = (v) => (v == null ? "" : Array.isArray(v) ? v.join(c.tipo === "rango" ? "-" : "\n") : String(v));
+    const [editando, setEditando] = useState(false);
+    const [v, setV] = useState(aTexto(c.valor));
+    const [msg, setMsg] = useState("");
+    const [malo, setMalo] = useState(false);
+    useEffect(() => { setV(aTexto(c.valor)); }, [JSON.stringify(c.valor)]);
+    const guardar = () => enviar("/config/" + slug, { clave: c.clave, valor: v })
+      .then(() => { setMsg("✅ Guardado"); setMalo(false); setEditando(false); alGuardar(); })
+      .catch((e) => { setMsg(fallo(e)); setMalo(true); });
+    const largo = c.tipo === "lista" || c.tipo === "texto";
+    const ayuda = [c.ayuda, c.min != null ? "Entre " + c.min + " y " + c.max + "." : ""].filter(Boolean).join(" ");
+    return h("div", { style: { borderTop: BORDE, padding: "8px 0" } },
+      h("div", { style: { ...fila, justifyContent: "space-between" } },
+        h("strong", { style: { fontSize: 14 } }, c.etiqueta),
+        editando ? null : h(Button, { size: "sm", variant: "ghost", onClick: () => { setEditando(true); setMsg(""); } }, "Cambiar")),
+      ayuda ? h("div", { style: tenue }, ayuda) : null,
+      editando
+        ? h("div", { style: { marginTop: 6 } },
+            largo
+              ? h("textarea", { value: v, rows: c.tipo === "lista" ? 6 : 4, "aria-label": c.etiqueta, onChange: (e) => setV(e.target.value),
+                  style: { width: "100%", border: BORDE, borderRadius: 6, padding: 8, fontFamily: "inherit", fontSize: 14, background: "transparent", color: "inherit" } })
+              : campo({ value: v, "aria-label": c.etiqueta, type: c.tipo === "numero" ? "number" : "text", placeholder: c.tipo === "rango" ? "mínimo-máximo" : "",
+                  onChange: (e) => setV(e.target.value), style: { maxWidth: 200 } }),
+            h("div", { style: { ...fila, marginTop: 6 } },
+              h(Button, { size: "sm", onClick: guardar }, "Guardar"),
+              h(Button, { size: "sm", variant: "ghost", onClick: () => { setEditando(false); setV(aTexto(c.valor)); setMsg(""); } }, "Cancelar")))
+        : h("div", { style: { whiteSpace: "pre-wrap", marginTop: 4, fontSize: 13 } }, aTexto(c.valor) || "—"),
+      h(Aviso, { texto: msg, malo }));
+  }
+
+  function Configuracion() {
+    const [canal, selector] = usarCanal();
+    const [cfg, error, recargar] = usarDatos(canal ? "/config/" + canal : "", 0);
+    const seccion = (t, ...hijos) => h("div", { style: caja }, h("strong", null, t), h("div", { style: { marginTop: 8 } }, ...hijos));
+    const lista = (xs, vacio) => (xs && xs.length ? h("ul", { style: { margin: "0 0 0 18px", fontSize: 13 } }, xs.map((x, i) => h("li", { key: i }, x))) : h("div", { style: tenue }, vacio));
+    return h("div", null, selector,
+      error ? h(Aviso, { texto: error, malo: true })
+      : !canal ? null
+      : !cfg ? h("p", { style: tenue }, "Cargando…")
+      : h("div", null,
+          seccion("El canal", h(Tabla, { datos: cfg.canal }),
+            h("div", { style: { ...tenue, marginTop: 6 } }, "Tiene: " + (cfg.capacidades.join(", ") || "nada cargado aún"))),
+          seccion("Pilares", lista(cfg.pilares.map((p) => p.nombre + " (" + p.id + ")" + (p.tipo === "prueba" ? " · en prueba" : "")), "Sin definir.")),
+          seccion("Lo que puedes cambiar",
+            h("p", { style: tenue }, "Lo cambia quien lleva marketing en el canal. Se aplica en el siguiente trabajo y cada cambio queda en el historial."),
+            cfg.editables.map((c) => h(CampoConfig, { key: c.clave, slug: canal, c, alGuardar: recargar }))),
+          seccion("Otros vetos y la transcripción", Object.entries(cfg.vetos).map(([t, xs]) =>
+            h("div", { key: t, style: { marginBottom: 8 } }, h("div", { style: { fontSize: 13, fontWeight: 600 } }, t), lista(xs, "Ninguno.")))),
+          Object.keys(cfg.marca).length ? seccion("Marca", h(Tabla, { datos: cfg.marca })) : null,
+          seccion("Personas", !cfg.personas.length ? h("div", { style: tenue }, "Nadie apuntado todavía.")
+            : cfg.personas.map((p) => h("div", { key: p.clave, style: { ...fila, padding: "3px 0" } },
+                h("strong", { style: { fontSize: 13 } }, p.nombre), p.correo ? h("span", { style: tenue }, p.correo) : null,
+                p.roles.map((r) => h(Badge, { key: r, variant: "outline" }, r)))),
+            h("p", { style: { ...tenue, marginTop: 6 } }, "Las personas, sus papeles, los ejecutores, los modelos, lo que el canal permite y las claves se cambian con la coordinadora: las claves nunca pasan por aquí.")),
+          seccion("Permite", h(Tabla, { datos: Object.fromEntries(Object.entries(cfg.permite).map(([k, v]) => [k.replace(/_/g, " "), v ? "sí" : "no"])) })),
+          seccion("Cómo trabaja", cfg.como_trabaja.map((p) => h("div", { key: p.id, style: { marginBottom: 10 } },
+            h("div", { style: fila }, h("strong", { style: { fontSize: 13 } }, p.nombre),
+              p.propia ? h(Badge, { variant: "outline" }, p.hereda ? "adaptada de «" + p.hereda + "»" : "propia de este canal") : null,
+              p.puertas.length ? h("span", { style: tenue }, "🚪 " + p.puertas.map((g) => g.tipo + (g.papel ? " (" + g.papel + ")" : "")).join(" → ")) : null),
+            h("div", { style: { ...tenue, marginTop: 2 } }, p.etapas.map((e) => e.id + " (" + (e.skill ? e.skill + ", " : "") + e.ejecutor + (e.modelo && e.modelo !== "el del perfil" ? ", " + e.modelo : "") + ")").join(" → "))))),
+          seccion("Historial de cambios", !cfg.historial.length ? h("p", { style: tenue }, "Sin cambios registrados.")
+            : cfg.historial.map((r, i) => h("div", { key: i, style: { fontSize: 12, padding: "4px 0", borderTop: BORDE } },
+                h("div", null, (r.ts || "").slice(0, 16).replace("T", " ") + " · " + (r.quien || "—") + " · ", h("strong", null, r.clave)),
+                h("div", { style: tenue }, r.antes + " → " + r.despues))))));
+  }
+
   function Puerta({ p }) {
     // Solo lectura: estas puertas se deciden por correo o en Telegram; los datos, en «Datos por verificar».
     return h("div", { style: caja },
@@ -240,17 +315,17 @@
     return h("div", null, ps.map((p) => h(Puerta, { key: p.id, p })));
   }
 
-  const SECCIONES = [["Canales", Canales], ["Vídeos", Videos], ["Datos por verificar", Datos], ["Publicados", Publicados], ["Acciones", Acciones], ["Decisiones", Decisiones]];
+  const SECCIONES = [["Canales", Canales], ["Vídeos", Videos], ["Datos por verificar", Datos], ["Publicados", Publicados], ["Acciones", Acciones], ["Decisiones", Decisiones], ["Configuración", Configuracion]];
 
   function Pagina() {
     const [sec, setSec] = useState(0);
     return h("div", { style: { padding: 16, maxWidth: 960 } },
       h("h1", { style: { fontSize: 20, fontWeight: 600, marginBottom: 4 } }, "YouTube"),
-      h("p", { style: { ...tenue, marginBottom: 12 } }, "Tus canales, sus vídeos, los datos por verificar y lo que espera una decisión."),
+      h("p", { style: { ...tenue, marginBottom: 12 } }, "Tus canales, sus vídeos, los datos por verificar, lo que espera una decisión y la configuración de cada canal."),
       h("div", { style: { ...fila, marginBottom: 16 } },
         SECCIONES.map(([n], i) => h(Button, { key: n, size: "sm", variant: i === sec ? "default" : "ghost", onClick: () => setSec(i) }, n))),
       h(SECCIONES[sec][1]));
   }
-  Pagina.partes = { Canales, Videos, Datos, Publicados, Acciones, Decisiones };
+  Pagina.partes = { Canales, Videos, Datos, Publicados, Acciones, Decisiones, Configuracion };
   window.__HERMES_PLUGINS__.register("hermes-youtube", Pagina);
 })();

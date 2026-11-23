@@ -8,11 +8,14 @@ activa con HYT_CORREO_IMAP en correo.env:
   HYT_CORREO_SMTP=smtp.ejemplo.com:587           salida (STARTTLS en 587, SSL en 465)
   HYT_CORREO_USUARIO=sistema@ejemplo.com
   HYT_CORREO_CLAVE=…
-  HYT_CORREO_AUTENTICA=mx.ejemplo.com            opcional: el servidor cuya cabecera Authentication-Results vale
+  HYT_CORREO_AUTENTICA=mx.ejemplo.com            opcional: el servidor de entrada, si deja su Authentication-Results
 
-Lo que llega se filtra igual que en el Worker: nada de más de 1 MB, nada que el servidor de entrada no dé por auténtico
-(la PRIMERA cabecera Authentication-Results, la que pone él, con dmarc=pass, o dkim/spf=pass del mismo dominio que el
-remitente) y nada automático (respuestas de vacaciones, listas, rebotes). Lo descartado se marca como leído y se cuenta
+Lo que llega se filtra igual que en el Worker: nada de más de 1 MB, nada que no sea auténtico y nada automático
+(respuestas de vacaciones, listas, rebotes). Auténtico quiere decir:
+  · con HYT_CORREO_AUTENTICA, que la PRIMERA cabecera Authentication-Results sea de ese servidor y dé dmarc=pass, o
+    dkim/spf=pass del mismo dominio que el remitente;
+  · sin ella (muchos buzones no dejan esa cabecera, y entonces la que venga la pudo escribir el remitente), que el
+    correo lleve una firma DKIM válida del dominio del remitente, comprobada aquí (hyt_dkim.py). Lo descartado se marca como leído y se cuenta
 sin guardar el texto. Un correo se marca como leído cuando el plugin dice que lo ha atendido (`/hecho`).
 """
 from __future__ import annotations
@@ -32,6 +35,17 @@ from email.message import EmailMessage
 from pathlib import Path
 
 MAX_BYTES = 1024 * 1024
+
+
+def _dkim():
+    import importlib.util
+    import sys
+    if "hyt_dkim" not in sys.modules:
+        spec = importlib.util.spec_from_file_location("hyt_dkim", Path(__file__).resolve().parent / "hyt_dkim.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["hyt_dkim"] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules["hyt_dkim"]
 
 
 def _hostport(v: str, defecto: int) -> tuple:
@@ -97,13 +111,17 @@ def _texto(m) -> str:
     return t
 
 
-def leer(crudo: bytes, uid: str, servidor: str = "") -> tuple:
+def leer(crudo: bytes, uid: str, servidor: str = "", dns=None) -> tuple:
     """Un correo crudo → (item como los del Worker, "") o (None, motivo del descarte)."""
     if len(crudo) > MAX_BYTES:
         return None, "grande"
     m = email.message_from_bytes(crudo, policy=email.policy.default)
     de = email.utils.parseaddr(str(m.get("from") or ""))[1].lower()
-    if not autentico(m.get_all("authentication-results") or [], de, servidor):
+    if servidor:
+        bueno = autentico(m.get_all("authentication-results") or [], de, servidor)
+    else:
+        bueno = any(_alineado(d, _dominio(de)) for d in _dkim().verificar(crudo, dns))
+    if not bueno:
         return None, "no-autentico"
     auto = automatico(m, de)
     if auto:

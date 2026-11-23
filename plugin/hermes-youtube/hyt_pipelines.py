@@ -157,7 +157,7 @@ def cargar(pid: str, slug: str | None = None) -> dict:
 
 # Datos que el CÓDIGO deja en la carpeta del encargo antes de una etapa («prepara»: [...]): las cifras no las calcula
 # el modelo. Cada una escribe datos-<nombre>.json (ver hyt_etapa.preparar). Todavía no hay ninguna: el mecanismo queda.
-PREPARA = ("fuente", "fuentes", "inventario", "referencias", "voz", "eleccion", "ajustes")   # antes de la etapa
+PREPARA = ("fuente", "fuentes", "inventario", "referencias", "voz", "eleccion", "ajustes", "descripcion")   # antes de la etapa
 TRAS = ("piezas", "seleccionar", "brief", "opciones", "material", "datos", "descripcion", "paquete")   # después
 
 

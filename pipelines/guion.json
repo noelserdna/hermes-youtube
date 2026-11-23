@@ -97,6 +97,9 @@
       "ejecutor": "hermes",
       "max_runtime": "5m",
       "salida": "descripcion.json",
+      "prepara": [
+        "descripcion"
+      ],
       "tras": [
         "descripcion"
       ]

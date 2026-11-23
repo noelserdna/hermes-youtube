@@ -43,6 +43,12 @@ Rechazo = B.Rechazo
 CRITICOS = (("verificacion.json", "verificacion"), ("voz.json", "voz"), ("retencion.json", "retencion"), ("cierre.json", "cierre"))
 
 
+def _de_descripcion(c: dict) -> bool:
+    """Un cambio del cierre que toca la descripción (o sus capítulos), no el guion."""
+    b = str(c.get("bloque") or "").lower()
+    return any(x in b for x in ("descrip", "capítulo", "capitulo", "resumen"))
+
+
 def _json(f: Path, defecto=None):
     """Lee un JSON escrito por un agente: tolera que venga envuelto en una valla de código."""
     try:
@@ -216,8 +222,9 @@ def p_eleccion(slug: str, d: Path, enc: dict) -> dict:
 
 def p_ajustes(slug: str, d: Path, enc: dict) -> dict:
     """La lista de cambios que hay que aplicar al guion, frase por frase. Reúne lo que pidieron los críticos (solo la
-    primera vez), lo que falla en la revisión por código, lo que decidió quien verificó los datos y el comentario de
-    la persona que pidió rehacer. Si no hay nada que cambiar, la etapa se salta."""
+    primera vez), lo que falla en la revisión por código, lo que decidió quien verificó los datos, el comentario de
+    la persona que pidió rehacer y, en las rondas siguientes, lo que el cierre pidió del guion en la ronda anterior
+    (lo de la descripción va a `describir`). Si no hay nada que cambiar, la etapa se salta."""
     est = d / ".estado"
     est.mkdir(exist_ok=True)
     memo = B.leer(est / "ajustes.json", None) or {"pasadas": 0, "vistos": []}
@@ -225,7 +232,7 @@ def p_ajustes(slug: str, d: Path, enc: dict) -> dict:
     if memo["pasadas"] == 0:
         for fichero, origen in CRITICOS:
             for c in (_json(d / fichero, {}) or {}).get("cambios") or []:
-                if isinstance(c, dict) and c.get("frase"):
+                if isinstance(c, dict) and c.get("frase") and not _de_descripcion(c):
                     items.append({"origen": origen, **{k: c.get(k, "") for k in ("bloque", "frase", "motivo", "quedaria")}})
     guion = (d / "guion.md").read_text(encoding="utf-8") if (d / "guion.md").exists() else ""
     if guion:
@@ -241,6 +248,10 @@ def p_ajustes(slug: str, d: Path, enc: dict) -> dict:
         memo["vistos"].append(h)
         return True
 
+    if memo["pasadas"] > 0:
+        for c in (_json(d / "cierre.json", {}) or {}).get("cambios") or []:
+            if isinstance(c, dict) and c.get("frase") and not _de_descripcion(c) and nuevo("cierre:" + str(c["frase"])):
+                items.append({"origen": "cierre", **{k: c.get(k, "") for k in ("bloque", "frase", "motivo", "quedaria")}})
     for dato in (_json(d / "datos.json", {}) or {}).get("datos") or []:
         if dato.get("estado") in ("corregido", "eliminado") and nuevo(f"dato:{dato.get('id')}:{dato.get('estado')}:{dato.get('valor', '')}"):
             motivo = (f"dato corregido por una persona: ahora es «{dato.get('valor', '')}»" if dato["estado"] == "corregido"
@@ -255,6 +266,29 @@ def p_ajustes(slug: str, d: Path, enc: dict) -> dict:
     if guion:
         shutil.copyfile(d / "guion.md", est / f"guion-antes-{memo['pasadas']}.md")
     return {} if items else {"saltar": "no hay nada que ajustar"}
+
+
+def p_descripcion(slug: str, d: Path, enc: dict) -> dict:
+    """En una ronda nueva la descripción no se escribe de cero: se deja la anterior (`descripcion-anterior.json`) y
+    `cambios-descripcion.json` con lo que el cierre pidió de ella esta vez (`pendientes`) y todo lo que se le ha
+    corregido en rondas anteriores (`ya_corregido`), que no puede volver. La primera vez no deja nada."""
+    est = d / ".estado"
+    est.mkdir(exist_ok=True)
+    hist = B.leer(est / "descripcion-corregido.json", None) or []
+    pend = []
+    for c in (_json(d / "cierre.json", {}) or {}).get("cambios") or []:
+        if isinstance(c, dict) and c.get("frase") and _de_descripcion(c):
+            x = {k: str(c.get(k) or "") for k in ("frase", "quedaria", "motivo")}
+            pend.append(x)
+            if not any(h["frase"] == x["frase"] for h in hist):
+                hist.append(x)
+    B.escribir(est / "descripcion-corregido.json", hist)
+    prev = _json(d / "descripcion.json", None)
+    if isinstance(prev, dict) and str(prev.get("resumen", "")).strip():
+        _guardar(d / "descripcion-anterior.json", prev)
+    if hist or pend:
+        _guardar(d / "cambios-descripcion.json", {"pendientes": pend, "ya_corregido": hist})
+    return {}
 
 
 # ── después de la etapa ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -516,13 +550,21 @@ def t_descripcion(slug: str, d: Path, enc: dict) -> dict:
     x = _json(d / "descripcion.json", None)
     if not isinstance(x, dict) or not str(x.get("resumen", "")).strip():
         return {"fallo": "descripcion.json no trae resumen"}
+    vueltas = []
+    for h in B.leer(d / ".estado" / "descripcion-corregido.json", None) or []:
+        if h.get("frase") and h.get("quedaria") and h["frase"] in x["resumen"]:
+            x["resumen"] = x["resumen"].replace(h["frase"], h["quedaria"])
+            vueltas.append(h["frase"])
+    if vueltas:
+        _guardar(d / "descripcion.json", x)
     cfg = C.leer(slug)
     caps = capitulos((d / "guion.md").read_text(encoding="utf-8"), x.get("capitulos") or [], R.reglas(cfg)["ppm"])
     texto = x["resumen"].strip() + "\n\n" + "\n".join(f"{T.mmss(s)} {t}" for s, t in caps) + "\n"
     if str(cfg.get("descripcion_pie") or "").strip():
         texto += "\n" + cfg["descripcion_pie"].strip() + "\n"
     (d / "descripcion.md").write_text(texto, encoding="utf-8")
-    return {"resumen": f"descripción con {len(caps)} capítulos"}
+    extra = f"; {len(vueltas)} frase(s) ya corregidas que habían vuelto, cambiadas otra vez" if vueltas else ""
+    return {"resumen": f"descripción con {len(caps)} capítulos{extra}"}
 
 
 def limpio(guion: str) -> str:
@@ -602,6 +644,7 @@ def t_paquete(slug: str, d: Path, enc: dict) -> dict:
 
 
 PREPARA = {"fuente": p_fuente, "fuentes": p_fuentes, "inventario": p_inventario, "referencias": p_referencias, "voz": p_voz,
-           "eleccion": p_eleccion, "ajustes": p_ajustes}
+           "eleccion": p_eleccion, "ajustes": p_ajustes,
+           "descripcion": p_descripcion}
 TRAS = {"piezas": t_piezas, "seleccionar": t_seleccionar, "brief": t_brief, "opciones": t_opciones,
         "material": t_material, "datos": t_datos, "descripcion": t_descripcion, "paquete": t_paquete}

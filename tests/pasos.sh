@@ -130,6 +130,25 @@ C.config('cocina', 'descripcion_pie', 'Cocina clara, cada semana.')
 S.t_descripcion('cocina', d, {}); t = (d / 'descripcion.md').read_text().splitlines()
 assert t[0] == 'El arroz se pasa por el agua.' and t[2].startswith('00:00 La regla') and t[-1] == 'Cocina clara, cada semana.', t
 import hyt_texto as X; c = X.leer_capitulos((d / 'descripcion.md').read_text()); assert c[1][0] == 25 and c[2][0] == 44, c"
+caso "ronda siguiente del guion: entra lo que el cierre pidió del guion, no lo de la descripción" "
+deja('guion.md', '''$GUION''')
+S.p_ajustes('cocina', d, {})
+deja('cierre.json', {'cambios': [{'bloque': 'desarrollo-1', 'frase': 'Eso es el agua.', 'motivo': 'absoluta', 'quedaria': 'Casi siempre es el agua.'},
+                                 {'bloque': 'descripción', 'frase': 'Te lo cuento en el siguiente vídeo.', 'motivo': 'promete', 'quedaria': 'Te lo cuento.'}]})
+S.p_ajustes('cocina', d, {}); a = [x for x in lee('ajustes.json')['ajustes'] if x['origen'] == 'cierre']
+assert [x['frase'] for x in a] == ['Eso es el agua.'], a
+S.p_ajustes('cocina', d, {}); assert not [x for x in lee('ajustes.json')['ajustes'] if x['origen'] == 'cierre']"
+caso "ronda nueva de la descripción: parte de la anterior y lo ya corregido no vuelve" "
+deja('guion.md', '''$GUION''')
+assert S.p_descripcion('cocina', d, {}) == {} and not (d / 'cambios-descripcion.json').exists() and not (d / 'descripcion-anterior.json').exists()
+deja('descripcion.json', {'resumen': 'El arroz y su agua. Te lo cuento en el siguiente vídeo.', 'capitulos': [{'titulo': 'La regla', 'desde': 'intro'}]})
+deja('cierre.json', {'cambios': [{'bloque': 'descripción', 'frase': 'Te lo cuento en el siguiente vídeo.', 'motivo': 'promete un vídeo', 'quedaria': 'Te lo cuento.'}]})
+S.p_descripcion('cocina', d, {}); c = lee('cambios-descripcion.json')
+assert lee('descripcion-anterior.json')['resumen'].startswith('El arroz') and len(c['pendientes']) == 1 and len(c['ya_corregido']) == 1, c
+deja('cierre.json', {'cambios': []}); S.p_descripcion('cocina', d, {}); c = lee('cambios-descripcion.json')
+assert c['pendientes'] == [] and c['ya_corregido'][0]['quedaria'] == 'Te lo cuento.', c
+deja('descripcion.json', {'resumen': 'El arroz y su agua. Te lo cuento en el siguiente vídeo.', 'capitulos': [{'titulo': 'La regla', 'desde': 'intro'}]})
+r = S.t_descripcion('cocina', d, {}); assert 'siguiente vídeo' not in (d / 'descripcion.md').read_text() and 'Te lo cuento.' in lee('descripcion.json')['resumen'] and 'cambiadas otra vez' in r['resumen'], r"
 caso "paquete: guion limpio para el teleprompter, guion numerado y la nota de la revisión" "
 deja('guion.md', '''$GUION''')
 deja('eleccion.json', {'titulo': 'Arroz suelto: la regla del agua', 'miniatura': {'texto': '100 ML'}, 'promesa': 'x', 'palabras_clave': ['arroz']})

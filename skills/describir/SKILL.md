@@ -28,7 +28,11 @@ Lee además `referencias/descripcion.md`.
 
 ## Procedimiento
 
-1. Lee `eleccion.json` y `guion.md`.
+1. Lee `eleccion.json` y `guion.md`. Si existe `descripcion-anterior.json`, es una ronda nueva: **parte de ella** y
+   cambia solo lo que haga falta porque el guion ha cambiado y lo que pida `cambios-descripcion.json`:
+   - aplica todo lo de `pendientes` (usa `quedaria` si viene);
+   - nada de lo que está en `ya_corregido` puede volver, ni tal cual ni con otras palabras: son cosas que una
+     persona o el editor jefe ya quitaron.
 2. Escribe el `resumen`: de dos a cuatro párrafos cortos, con la voz del canal. Las dos primeras líneas dicen de qué
    va el vídeo y llevan una palabra clave del título. No destripa el vídeo ni repite el guion.
 3. Agrupa los bloques del guion en **entre cuatro y seis capítulos**. El primero incluye la intro. Los reenganches

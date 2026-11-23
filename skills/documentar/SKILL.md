@@ -31,6 +31,10 @@ lo que tú dejes pasar.
    promesa; lo demás, aunque sea bueno, no entra.
 2. Parte de las piezas del inventario que respaldan el tema y **vuelve a la fuente** (`fuentes/<colección>/<id>.txt`, dentro del encargo)
    para leer lo que hay alrededor de cada una. Busca además en el resto del inventario lo que sirva a la promesa.
+   Si en la carpeta hay `investigacion.json` (versión **investigada** del guion), suma sus `hallazgos`: ya están
+   comprobados y su texto está en `fuentes/web/<id>.txt`. Úsalos para cubrir huecos y dar actualidad, con
+   `fuente: "web/<id>"`, la misma `cita`, `"externo": true` y su `url`. Lo externo aporta hechos, no frases: la voz
+   sigue siendo la de quien presenta. Lo de `dudosos` de la investigación también va a tus `dudosos`.
 3. Filtra **frase a frase**:
    - fuera todo lo que el canal excluye, aunque esté en mitad de una explicación;
    - fuera lo que dicen otras personas, salvo que el canal permita usarlo; nunca como voz de quien presenta;

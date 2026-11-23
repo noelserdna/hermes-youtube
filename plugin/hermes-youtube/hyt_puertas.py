@@ -73,7 +73,7 @@ Rechazo = B.Rechazo
 APRUEBA = ("acepto", "algunas")   # los verbos que ejecutan lo aprobado (con un aviso grave, bloqueados)
 DESHACER_DEFECTO_S = 180
 EMOJI = {"alta": "🧭", "elegir-temas": "💡", "elegir-titulo": "🏷", "revision": "📝", "datos": "🔎",
-         "revision-final": "🎬", "voz": "🎙", "decision": "📊"}
+         "revision-final": "🎬", "voz": "🎙", "decision": "📊", "elegir-version": "⚖️"}
 _APROBAR = {"verbo": "acepto", "etiqueta": "✅ Aprobar"}
 _REHACER = {"verbo": "cambios", "etiqueta": "✏️ Rehacer", "texto": True}
 _RECHAZAR = {"verbo": "rechazo", "etiqueta": "🗑 Rechazar", "texto": True}
@@ -91,7 +91,11 @@ OPCIONES = {
     "voz": _REVISAR,
     "datos": [{"verbo": "acepto", "etiqueta": "✅ Datos verificados"}, _RECHAZAR],
     "decision": _REVISAR,
+    # dos versiones del mismo guion (gemelos): la persona elige cuál sigue; la otra se archiva
+    "elegir-version": [{"verbo": "algunas", "etiqueta": "✅ Elegir versión", "texto": True, "valores": ["A", "B"]},
+                       {"verbo": "rechazo", "etiqueta": "🗑 Ninguna", "texto": True}],
 }
+LETRAS = "ABCDEFGH"
 
 
 ESTADOS_DATO = ("verificado", "corregido", "eliminado")
@@ -351,6 +355,8 @@ def decidir(gid: str, verbo: str, texto: str, persona: str, medio: str, ident, p
         texto = (texto or "").strip()
         if verbo in APRUEBA and str(puerta.get("al_aprobar") or "").startswith("temas:") and puerta.get("encargo"):
             _temas_elegidos(puerta["canal"], puerta["encargo"], texto)   # rechaza aquí lo que no se puede cumplir
+        if verbo in APRUEBA and puerta.get("tipo") == "elegir-version":
+            _version_elegida(puerta, texto)   # una letra que no existe se corrige en el acto
         if opcion.get("texto") and not texto:
             raise Rechazo(f"«{opcion['etiqueta']}» necesita un texto: " +
                           ("lo que eliges" if verbo == "algunas" else "el motivo o lo que hay que cambiar"))
@@ -444,6 +450,8 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
     if not eid:   # una puerta suelta: no hay cadena ni encargo que cerrar
         accion = puerta.get("al_aprobar") or "nada"
         return _script(slug, None, accion[len("script:"):], firma) if accion.startswith("script:") else "aprobado"
+    if puerta.get("tipo") == "elegir-version":
+        return _elegir_version(puerta, firma, texto)
     enc = E.leer(slug, eid)
     if puerta["decision"]["verbo"] == "algunas":   # la elección viaja con el encargo: la pipeline siguiente la hereda
         (E.carpeta(slug, eid) / "eleccion.md").write_text(f"# Elección de {firma}\n\n{texto}\n")
@@ -468,8 +476,7 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
         _cargar("hyt_wiki").de_salida(slug, eid, mem)
     accion = puerta.get("al_aprobar") or "nada"
     if accion.startswith("pipeline:"):
-        nuevo = E.lanzar(slug, accion.split(":", 1)[1], {}, quien=f"notario: puerta {puerta['id']} ({firma})", origen=eid)
-        resultado = f"lanzado {nuevo['id']}"
+        resultado = lanzar_gemelos(slug, eid, accion.split(":", 1)[1], f"notario: puerta {puerta['id']} ({firma})")
     elif accion.startswith("temas:"):
         resultado = _lanzar_temas(slug, eid, accion.split(":", 1)[1], texto, puerta, firma)
     elif accion.startswith("script:"):
@@ -485,6 +492,25 @@ def _aprobar(puerta: dict, firma: str, texto: str) -> str:
     except Exception:   # noqa: BLE001 — aprender es un extra: no puede tumbar una aprobación ya firmada
         pass
     return resultado
+
+
+def lanzar_gemelos(slug: str, eid: str, pids: str, quien: str) -> str:
+    """«a» lanza una pipeline; «a+b» lanza las dos como gemelos: dos versiones del mismo trabajo, con la misma elección,
+    que acaban en una sola puerta para elegir una (versión A, B…, en el orden escrito)."""
+    lista = [x.strip() for x in pids.split("+") if x.strip()]
+    nuevos = []
+    for pid in lista:
+        nuevos.append(E.lanzar(slug, pid, {}, quien=quien, origen=eid))
+    if len(nuevos) > 1:
+        ids = [n["id"] for n in nuevos]
+        for i, n in enumerate(nuevos):
+            e = E.leer(slug, n["id"])
+            e["gemelos"] = ids
+            e["version_letra"] = LETRAS[i]
+            e["version"] = PL.cargar(e["pipeline"], slug).get("version") or e["pipeline"]
+            E.guardar(slug, e)
+        return f"lanzadas {len(ids)} versiones: " + ", ".join(f"{LETRAS[i]} {x}" for i, x in enumerate(ids))
+    return f"lanzado {nuevos[0]['id']}"
 
 
 def _temas_elegidos(slug: str, eid: str, texto: str) -> list:
@@ -519,6 +545,106 @@ def _lanzar_temas(slug: str, eid: str, pid: str, texto: str, puerta: dict, firma
     return f"{len(lanzados)} tema(s) en marcha: " + ", ".join(lanzados)
 
 
+# ── gemelos: dos versiones del mismo guion ─────────────────────────────────────────────────────────────────────────
+def _descartar(slug: str, eid: str, motivo: str) -> None:
+    enc = E.leer(slug, eid)
+    enc["estado"] = "descartado"
+    enc["descartado_motivo"] = motivo
+    enc.pop("puerta_id", None)
+    E.guardar(slug, enc)
+
+
+def _version_elegida(puerta: dict, texto: str) -> dict:
+    """El gemelo que eligió la persona: por su letra («A», «la B», «versión b») o por su versión («investigada»)."""
+    gem = puerta.get("gemelos") or []
+    t = (texto or "").strip().lower()
+    for g in gem:
+        if re.search(rf"(^|[^a-z]){g['letra'].lower()}([^a-z]|$)", t) or g.get("version", "@") in t:
+            return g
+    raise Rechazo("Di qué versión eliges: " + " o ".join(f"«{g['letra']}» ({g.get('version', '')})" for g in gem))
+
+
+def _elegir_version(puerta: dict, firma: str, texto: str) -> str:
+    slug = puerta["canal"]
+    elegido = _version_elegida(puerta, texto)
+    for g in puerta.get("gemelos") or []:
+        if g["encargo"] != elegido["encargo"]:
+            _descartar(slug, g["encargo"], f"se eligió la versión {elegido['letra']} ({elegido.get('version', '')})")
+    enc = E.leer(slug, elegido["encargo"])
+    enc["gemelos_resuelto"] = elegido["letra"]
+    enc.pop("puerta_id", None)
+    E.guardar(slug, enc)
+    siguiente = abrir_siguiente(slug, elegido["encargo"], 0, tras=puerta["id"])
+    return (f"elegida la versión {elegido['letra']} ({elegido.get('version', '')})"
+            + (f": pasa a la puerta {siguiente['tipo']} [{siguiente['id']}]" if siguiente else ""))
+
+
+def abrir_inicial(slug: str, eid: str) -> dict | None:
+    """Al acabar un guion: su primera puerta. Si tiene gemelos y aún no se ha elegido, espera a que acaben todos y
+    entonces abre UNA puerta «elegir-version» con todos; si un gemelo falló o se descartó, sigue solo; si llega
+    cuando ya se siguió con otro, se archiva."""
+    enc = E.leer(slug, eid)
+    ids = enc.get("gemelos") or []
+    if not ids or enc.get("gemelos_resuelto"):
+        return abrir_siguiente(slug, eid, 0)
+    otros = [E.leer(slug, x) for x in ids if x != eid]
+    if any(o.get("gemelos_resuelto") for o in otros):
+        _descartar(slug, eid, "acabó cuando ya se había seguido con la otra versión")
+        return None
+    vivos = [o for o in otros if o.get("estado") not in ("descartado", "parado")]
+    if not vivos:   # el otro falló o se descartó: este sigue solo
+        enc["gemelos_resuelto"] = enc.get("version_letra") or "solo"
+        E.guardar(slug, enc)
+        return abrir_siguiente(slug, eid, 0)
+    enc["estado"] = "esperando-gemelo"
+    E.guardar(slug, enc)
+    if any(o.get("estado") != "esperando-gemelo" for o in vivos):
+        return None   # el último en acabar abre la puerta
+    return abrir_eleccion(slug, [E.leer(slug, x) for x in ids if E.leer(slug, x).get("estado") == "esperando-gemelo"])
+
+
+def gemelo_fallo(slug: str, eid: str) -> dict | None:
+    """Un gemelo se ha parado: si el otro ya acabó y lo esperaba, sigue solo."""
+    enc = E.leer(slug, eid)
+    for x in enc.get("gemelos") or []:
+        if x != eid:
+            o = E.leer(slug, x)
+            if o.get("estado") == "esperando-gemelo" and not o.get("gemelos_resuelto"):
+                o["gemelos_resuelto"] = o.get("version_letra") or "solo"
+                E.guardar(slug, o)
+                return abrir_siguiente(slug, x, 0)
+    return None
+
+
+def abrir_eleccion(slug: str, encs: list) -> dict:
+    encs = sorted(encs, key=lambda e: e.get("version_letra") or "Z")
+    a = encs[0]
+    cfg = C.leer(slug)
+    cadena = PL.puertas_de(a)
+    papel = (cadena[0].get("papel") if cadena else "") or "marketing"
+    gemelos = [{"letra": e.get("version_letra") or LETRAS[i], "version": e.get("version") or e["pipeline"],
+                "encargo": e["id"], "pipeline": e["pipeline"]} for i, e in enumerate(encs)]
+    lineas = []
+    for g in gemelos:
+        m = _cargar("hyt_pasos")._json(E.carpeta(slug, g["encargo"]) / "paquete.json", {}) or {}
+        lineas.append(f"Versión {g['letra']} ({g['version']}): {m.get('palabras', '?')} palabras, "
+                      f"{m.get('minutos', '?')} min, nota {m.get('nota', '?')}")
+    gid = f"g{int(time.time()):x}{secrets.token_hex(3)}"
+    puerta = {"id": gid, "tipo": "elegir-version", "canal": slug, "encargo": a["id"], "pipeline": a["pipeline"],
+              "titulo": f"{EMOJI['elegir-version']} Elegir versión del guion · {cfg['nombre']}",
+              "texto": "\n".join(lineas), "opciones": OPCIONES["elegir-version"], "papel": papel,
+              "gemelos": gemelos, "indice": -1, "total": len(cadena) or 1, "ronda": 0, "al_aprobar": "nada",
+              "rehacer": None, "revision": {}, "creada": B.ahora(), "estado": "abierta"}
+    with B.cerrojo("puertas"):
+        B.escribir(indice(gid), puerta)
+    for e in encs:
+        e = E.leer(slug, e["id"])
+        e["puerta_id"] = gid
+        e["estado"] = "en-puerta"
+        E.guardar(slug, e)
+    return puerta
+
+
 def _aplicar(puerta: dict, firma: str) -> str:
     """Ejecuta lo decidido. Devuelve una línea con el resultado."""
     dec = puerta["decision"]
@@ -535,6 +661,10 @@ def _aplicar(puerta: dict, firma: str) -> str:
         if enc.get("estado") == "descartado":
             return f"descartado: {enc.get('descartado_motivo')}"
         return f"se rehace desde {desde}" + (f" (ronda {enc['rondas']} de {E.rondas_max(slug)})" if len(PL.puertas_de(enc)) > 1 else "")
+    if verbo == "rechazo" and puerta.get("tipo") == "elegir-version":
+        for g in puerta.get("gemelos") or []:
+            _descartar(slug, g["encargo"], f"ninguna versión elegida: {texto}")
+        return "descartadas las dos versiones"
     if verbo == "rechazo":
         if eid:
             enc = E.leer(slug, eid)

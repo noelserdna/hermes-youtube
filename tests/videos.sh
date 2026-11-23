@@ -21,7 +21,11 @@ python3 "$P/hyt_encargos.py" lanzar cocina titulo-miniatura --param "tema=Arroz 
 TM=$(ls "$K/encargos" | grep '^titulo-miniatura' | head -1)
 si "un tema elegido es un vídeo en «Elegido», con su tema como título" "$V lista cocina | grep -q '^Elegido .*arroces .*Arroz suelto en casa'"
 etapas "$TM"; $PU decidir-local "$(puerta $TM)" algunas "titulo: 1" >/dev/null
-G=$(ls "$K/encargos" | grep '^guion' | head -1); D="$K/encargos/$G"
+G=$(ls "$K/encargos" | grep '^guion-' | grep -v '^guion-investigado' | head -1); D="$K/encargos/$G"
+GI=$(ls "$K/encargos" | grep '^guion-investigado' | head -1)
+si "elegir título y miniatura lanza las dos versiones del guion, gemelas" "[ -n \"$GI\" ] && jq -e '.gemelos | length == 2' $K/encargos/$G/encargo.json && jq -e '.version == \"investigada\"' $K/encargos/$GI/encargo.json"
+# aquí se prueba el camino de una sola versión: la investigada se para y la propia sigue sola
+jq '.estado = "parado"' "$K/encargos/$GI/encargo.json" > "$T/e" && cp "$T/e" "$K/encargos/$GI/encargo.json"
 si "al elegir título y miniatura pasa a «Título y miniatura elegidos», y sigue siendo un solo vídeo" "[ \$(estado 'Título y miniatura elegidos') = 1 ] && [ \$($V lista cocina | wc -l) = 1 ]"
 deja() {  # lo que habrían dejado las etapas de verdad (el ejecutor de prueba escribe relleno)
   echo '{"titulo": "Arroz suelto: la regla del agua", "promesa": "Sabrás medir el agua", "miniatura": {"que_se_ve": "Una cazuela", "texto": "100 ML", "presentador": {"expresion": "duda", "foto_a_pedir": "De perfil, mirando la cazuela"}, "composicion": {"tipo": "plano-cenital"}}}' > "$D/eleccion.json"

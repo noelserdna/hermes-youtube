@@ -16,8 +16,11 @@ import hashlib
 import importlib.util
 import json
 import re
+import html
 import shutil
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 AQUI = Path(__file__).resolve().parent
@@ -291,6 +294,21 @@ def p_descripcion(slug: str, d: Path, enc: dict) -> dict:
     return {}
 
 
+def p_investigacion(slug: str, d: Path, enc: dict) -> dict:
+    """Las fuentes externas de la investigación, dentro de `fuentes/web/` del encargo: así el material las cita como
+    cualquier otra fuente («web/w1») y su cita literal se comprueba igual. Sin investigación no deja nada."""
+    inv = _json(d / "investigacion.json", None)
+    if not isinstance(inv, dict):
+        return {}
+    dest = d / "fuentes" / "web"
+    dest.mkdir(parents=True, exist_ok=True)
+    for f in inv.get("fuentes") or []:
+        origen = d / "externas" / f"{f.get('id', '')}.txt"
+        if f.get("comprobada") is not False and re.fullmatch(r"w\d{1,3}", str(f.get("id", ""))) and origen.exists():
+            shutil.copyfile(origen, dest / origen.name)
+    return {}
+
+
 # ── después de la etapa ─────────────────────────────────────────────────────────────────────────────────────────────
 def t_piezas(slug: str, d: Path, enc: dict) -> dict:
     """Solo entran al inventario las piezas cuya cita aparece tal cual en la fuente."""
@@ -470,6 +488,100 @@ def t_opciones(slug: str, d: Path, enc: dict) -> dict:
     return {"resumen": f"{len(presentados)} títulos presentados de {len(tits)} y {len(minis)} ideas de miniatura"}
 
 
+def _norm(t: str) -> str:
+    """Para buscar una cita en una página o una transcripción: solo las palabras, sin tildes ni mayúsculas."""
+    return " ".join(re.findall(r"\w+", T.plano(str(t or ""))))
+
+
+def _pedir_web(url: str) -> str:
+    """El texto de una página (sin etiquetas). Las pruebas lo sustituyen: nunca salen a la red."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) hermes-youtube/0.1",
+                                               "Accept-Language": "es,en"})
+    crudo = urllib.request.urlopen(req, timeout=20).read(3_000_000).decode("utf-8", "replace")
+    crudo = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", crudo)
+    return html.unescape(re.sub(r"<[^>]+>", " ", crudo))
+
+
+PEDIR_WEB = _pedir_web
+YOUTUBE = None   # las pruebas ponen aquí un doble de hyt_youtube
+
+
+def _yt():
+    return YOUTUBE or _cargar("hyt_youtube")
+
+
+def t_investigacion(slug: str, d: Path, enc: dict) -> dict:
+    """Lo que trajo la investigación, comprobado por código para que no haya fuentes inventadas:
+    · cada hallazgo cita literalmente el texto guardado de su fuente (`externas/<id>.txt`); si no, fuera;
+    · cada fuente es https; un vídeo de YouTube tiene que existir (oEmbed) y su transcripción de hoy contener las citas;
+      una página se vuelve a descargar y tiene que contenerlas;
+    · lo que no se puede volver a comprobar (la página no responde, otra transcripción) no se tira: va a `dudosos`,
+      para que lo verifique una persona.
+    Falla si quedan menos de tres hallazgos."""
+    inv = _json(d / "investigacion.json", None)
+    if not isinstance(inv, dict) or not isinstance(inv.get("fuentes"), list) or not isinstance(inv.get("hallazgos"), list):
+        return {"fallo": "investigacion.json no tiene el formato pedido (fuentes y hallazgos)"}
+    fuentes, textos = {}, {}
+    for f in inv["fuentes"]:
+        fid, url = str(f.get("id", "")), str(f.get("url", ""))
+        texto = (d / "externas" / f"{fid}.txt").read_text(encoding="utf-8", errors="replace") \
+            if re.fullmatch(r"w\d{1,3}", fid) and (d / "externas" / f"{fid}.txt").exists() else ""
+        if not url.startswith("https://") or not texto.strip():
+            continue
+        f = {**f, "comprobada": None}
+        if f.get("tipo") == "youtube" or re.search(r"(youtube\.com|youtu\.be)/", url):
+            f["tipo"] = "youtube"
+            try:
+                o = _yt().existe(url)
+                f["titulo"], f["autor_o_canal"] = f.get("titulo") or o["titulo"], f.get("autor_o_canal") or o["canal"]
+                if _norm(o["titulo"])[:30] not in _norm(f.get("titulo", "")) and _norm(f.get("titulo", ""))[:30] not in _norm(o["titulo"]):
+                    f["comprobada"], f["nota"] = False, f"el vídeo existe pero se titula «{o['titulo']}»"
+                else:
+                    textos[fid] = _norm(_yt().transcripcion(url)["texto"])
+            except Exception as e:   # noqa: BLE001 — no existe, es privado o YouTube no responde
+                f["comprobada"], f["nota"] = False, f"no se pudo comprobar el vídeo: {str(e)[:120]}"
+        else:
+            try:
+                textos[fid] = _norm(PEDIR_WEB(url))
+            except Exception as e:   # noqa: BLE001
+                f["nota"] = f"la página no se pudo volver a descargar: {str(e)[:120]}"
+        fuentes[fid] = {**f, "_snap": _norm(texto)}
+    buenos, dudosos, fuera = [], list(inv.get("dudosos") or []), 0
+    for h in inv["hallazgos"]:
+        f = fuentes.get(str(h.get("fuente", "")))
+        cita = _norm(h.get("cita", ""))
+        if not f or len(cita.split()) < 6 or cita not in f["_snap"]:
+            fuera += 1
+            continue
+        if f["comprobada"] is False:
+            fuera += 1
+            continue
+        vivo = textos.get(f["id"])
+        if vivo is not None and cita in vivo:
+            buenos.append({**h, "url": f["url"], "comprobado": True})
+            f["comprobada"] = True
+        else:
+            dudosos.append({"dato": h.get("dicho") or h.get("cita"), "versiones": [{"valor": h.get("cita"), "fuente": f["url"]}],
+                            "motivo": "no se pudo volver a encontrar la cita en la fuente"})
+    if len(buenos) < 3:
+        return {"fallo": f"solo {len(buenos)} hallazgos comprobados ({fuera} descartados, {len(dudosos)} dudosos): "
+                         "la investigación no da para una versión con fuentes"}
+    limpias = [{k: v for k, v in f.items() if k != "_snap"} for f in fuentes.values()]
+    _guardar(d / "investigacion.json", {**inv, "fuentes": limpias, "hallazgos": buenos, "dudosos": dudosos,
+                                        "descartados": fuera})
+    yt = sum(1 for f in limpias if f.get("tipo") == "youtube" and f.get("comprobada"))
+    return {"resumen": f"{len(buenos)} hallazgos comprobados de {sum(1 for f in limpias if f.get('comprobada'))} fuentes "
+                       f"({yt} vídeos); {len(dudosos)} dudosos, {fuera} descartados"}
+
+
+def _cita_web(d: Path, ident: str, cita: str) -> dict | None:
+    f = d / "fuentes" / "web" / f"{ident}.txt"
+    aguja = _norm(cita)
+    if len(aguja) < 12 or not f.exists():
+        return None
+    return {"t": 0, "marca": ""} if aguja in _norm(f.read_text(encoding="utf-8", errors="replace")) else None
+
+
 def t_material(slug: str, d: Path, enc: dict) -> dict:
     """El material con el que se escribe: solo lo que lleva una cita literal de su fuente."""
     m = _json(d / "material.json", None)
@@ -479,7 +591,7 @@ def t_material(slug: str, d: Path, enc: dict) -> dict:
     for x in m["material"]:
         try:
             col, ident = _partir_fuente(str(x.get("fuente", "")))
-            ok = F.cita(slug, col, ident, str(x.get("cita", "")))
+            ok = _cita_web(d, ident, str(x.get("cita", ""))) if col == "web" else F.cita(slug, col, ident, str(x.get("cita", "")))
         except (Rechazo, AttributeError):
             ok = None
         if ok and str(x.get("n", "")).isdigit():
@@ -517,6 +629,20 @@ def t_datos(slug: str, d: Path, enc: dict) -> dict:
         datos.append({"id": f"d{i}", "dato": x["dato"], "frase": x.get("frase", ""), "motivo": x.get("motivo", "externo"),
                       "fuente": x.get("fuente", ""), "versiones": x.get("versiones") or [],
                       "estado": ya.get("estado", "pendiente"), "valor": ya.get("valor", "")})
+    # lo que viene de fuera y el guion usa se verifica siempre, aunque la verificación no lo haya pedido
+    inv = _json(d / "investigacion.json", {}) or {}
+    urls = {f.get("id"): f.get("url", "") for f in inv.get("fuentes") or []}
+    usados = {int(n) for n in re.findall(r"\[(\d+)\]", (d / "guion.md").read_text(encoding="utf-8"))} \
+        if (d / "guion.md").exists() else set()
+    for x in (_json(d / "material.json", {}) or {}).get("material") or []:
+        fuente = str(x.get("fuente", ""))
+        if fuente.startswith("web/") and x.get("n") in usados and not any(y.get("n") == x["n"] for y in datos):
+            url = urls.get(fuente[4:], "") or x.get("url", "")
+            if not any(url and url in str(y.get("fuente", "")) and x.get("dicho", "")[:40] in str(y.get("dato", "")) for y in datos):
+                ya = previos.get(x.get("dicho") or x.get("cita"), {})
+                datos.append({"id": f"d{len(datos) + 1}", "n": x["n"], "dato": x.get("dicho") or x.get("cita"), "frase": "",
+                              "motivo": "externo", "fuente": url or fuente, "versiones": [],
+                              "estado": ya.get("estado", "pendiente"), "valor": ya.get("valor", "")})
     _guardar(d / "datos.json", {"datos": datos})
     return {"resumen": f"{len(datos)} datos a verificar; {len(v.get('cambios') or [])} cambios pedidos"}
 
@@ -645,6 +771,7 @@ def t_paquete(slug: str, d: Path, enc: dict) -> dict:
 
 PREPARA = {"fuente": p_fuente, "fuentes": p_fuentes, "inventario": p_inventario, "referencias": p_referencias, "voz": p_voz,
            "eleccion": p_eleccion, "ajustes": p_ajustes,
-           "descripcion": p_descripcion}
+           "descripcion": p_descripcion, "investigacion": p_investigacion}
 TRAS = {"piezas": t_piezas, "seleccionar": t_seleccionar, "brief": t_brief, "opciones": t_opciones,
-        "material": t_material, "datos": t_datos, "descripcion": t_descripcion, "paquete": t_paquete}
+        "material": t_material, "datos": t_datos, "descripcion": t_descripcion, "paquete": t_paquete,
+        "investigacion": t_investigacion}

@@ -46,17 +46,18 @@ si "la configuración global vive en yt.json" "jq -e '.perfil_modelos == \"calid
 
 # ── pipelines ──
 si "todas las pipelines del plugin son válidas" "$PL validar-todas"
-igual "las cinco pipelines de partida" "$($PL listar | awk '{print $1}' | tr '\n' ' ')" "guion inventario perfil-voz propuesta titulo-miniatura "
+igual "las seis pipelines de partida" "$($PL listar | awk '{print $1}' | tr '\n' ' ')" "guion-investigado guion inventario perfil-voz propuesta titulo-miniatura "
 si "el plan de guion: una línea por etapa y su cadena de puertas" "[ \$($PL plan guion --canal demo | grep -c '^▶') = \$(jq '.etapas | length' $ROOT/pipelines/guion.json) ] && [ \$($PL plan guion --canal demo | grep -c '^🚪') = 3 ] && $PL plan guion --canal demo | grep -q '🚪 revision (marketing)'"
 si "cada pipeline acaba en su puerta o en su cadena, con el papel que decide" "python3 -c \"
 import sys; sys.path.insert(0, '$P'); import hyt_pipelines as m
 L = m.listar()
 tipos = {pid: [(g['tipo'], g.get('papel', '')) for g in m.puertas_de(p)] for pid, p in L.items()}
 assert all(papel == '' for _, papel in tipos.pop('inventario'))      # el inventario, con puerta o sin ella, no pide papel
-assert tipos == {'guion': [('revision', 'marketing'), ('datos', 'datos'), ('revision-final', 'presentador')],
+cadena = [('revision', 'marketing'), ('datos', 'datos'), ('revision-final', 'presentador')]
+assert tipos == {'guion': cadena, 'guion-investigado': cadena,
                  'perfil-voz': [('voz', 'presentador')], 'propuesta': [('elegir-temas', 'marketing')], 'titulo-miniatura': [('elegir-titulo', 'marketing')]}, tipos
 assert m.puertas_de(L['guion'])[1]['si_vacio'] == 'saltar' and 'puerta' not in L['guion']
-assert m.al_aprobar_de(L['titulo-miniatura']) == 'pipeline:guion' and m.al_aprobar_de(L['guion']) == 'nada' and m.rehacer_de(L['guion']) == 'ajustar'
+assert m.al_aprobar_de(L['titulo-miniatura']) == 'pipeline:guion+guion-investigado' and m.al_aprobar_de(L['guion']) == 'nada' and m.rehacer_de(L['guion']) == 'ajustar'
 assert m.listar()['guion']['nueva_pieza'] is True and m.puertas_de({}) == [] and m.puertas_de(None) == []\""
 mkdir -p "$K/demo/extensiones/pipelines"
 cat > "$K/demo/extensiones/pipelines/con-requisito.json" <<'J'
@@ -84,7 +85,7 @@ import sys
 sys.path.insert(0, sys.argv[1])
 import hyt_pipelines as PL
 assert PL.PERFILES_ROL == ("yt-analista", "yt-estratega", "yt-espectador", "yt-titulador", "yt-miniaturista", "yt-investigador",
-                           "yt-guionista", "yt-verificador", "yt-retencion", "yt-doble", "yt-editor-jefe")
+                           "yt-investigador-web", "yt-guionista", "yt-verificador", "yt-retencion", "yt-doble", "yt-editor-jefe")
 assert PL.EJECUTORES == ("hermes", "claude")
 assert PL.TIPOS_PUERTA == ("alta", "elegir-temas", "elegir-titulo", "revision", "datos", "revision-final", "voz", "decision")
 def p(**k):
@@ -92,9 +93,9 @@ def p(**k):
                                                   {"id": "bb", "perfil": "yt-verificador", "skill": "verificar"}]}
     return {**base, **k}
 assert PL.validar(p()) == [], PL.validar(p())
-for bien in ("nada", "pipeline:guion", "script:exportar.sh", "script:exportar.sh {encargo} extra"):
+for bien in ("nada", "pipeline:guion", "pipeline:guion+guion-investigado", "script:exportar.sh", "script:exportar.sh {encargo} extra"):
     assert PL.validar(p(puerta={"tipo": "revision", "al_aprobar": bien})) == [], bien
-for mal in ("publicar", "gestiones", "apuntar", "instalar:x/y@abcdef1", "script:a.sh; rm -rf /", "pipeline:", "otra-cosa"):
+for mal in ("publicar", "gestiones", "apuntar", "instalar:x/y@abcdef1", "script:a.sh; rm -rf /", "pipeline:", "pipeline:guion+", "otra-cosa"):
     assert PL.validar(p(puerta={"tipo": "revision", "al_aprobar": mal})), mal
 assert PL.validar(p(puerta={"tipo": "publicar"}))                                   # tipo que ya no existe
 assert PL.validar(p(puerta={"tipo": "revision", "rehacer": "zeta"}))                # rehacer a una etapa que no es suya

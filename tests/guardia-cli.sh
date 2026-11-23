@@ -123,7 +123,7 @@ no() { if eval "$2" >/dev/null 2>&1; then bad "$1"; else ok "$1"; fi; }
 si "hyt canales" "$H canales | grep -q 'Canal Demo (demo) · presenta: Persona Ejemplo'"
 si "hyt alta crea el canal y siembra su memoria" "[ -f $CL/demo/canal.json ] && [ -f $CL/demo/wiki/concepts/canal.md ]"
 no "hyt alta sin presentador" "$H alta tres 'Canal Tres'"
-si "hyt pipelines" "[ \$($H pipelines | wc -l) = 5 ] && $H pipelines | grep -q '^guion .*Guion: '"
+si "hyt pipelines" "[ \$($H pipelines | wc -l) = 6 ] && $H pipelines | grep -q '^guion .*Guion: '"
 si "hyt plan dice quién hace cada etapa, con qué modelo, y la puerta" "$H plan guion demo | grep -q '▶ Escribir el guion: {tema} (yt-guionista, opus)' && $H plan guion demo | grep -q '(yt-verificador, sonnet)' && $H plan titulo-miniatura demo | grep -q '🚪 elegir-titulo (marketing) → pipeline:guion'"
 si "hyt plan enseña la cadena de puertas con sus papeles" "[ \"\$($H plan guion demo | grep '^🚪' | tr '\n' '|')\" = '🚪 revision (marketing)|🚪 datos (datos) · se salta si no hay datos pendientes|🚪 revision-final (presentador)|' ]"
 no "hyt lanzar con un --param mal escrito" "$H lanzar demo guion --param tema"

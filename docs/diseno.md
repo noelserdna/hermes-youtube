@@ -132,6 +132,22 @@ de cita que se quitan al exportar. El cierre no anuncia el final ni vende nada: 
 Cadena de puertas por defecto: `revision` (marketing) → `datos` → `revision-final` (presentador). Cada canal puede
 cambiarla.
 
+### Dos versiones: `guion` y `guion-investigado`
+
+Al elegir título y miniatura se lanzan las dos a la vez (`al_aprobar: pipeline:guion+guion-investigado`), como
+**gemelos**: mismo origen, misma elección, letras A y B.
+
+- `guion-investigado` es `guion` con una etapa delante, `investigar` (perfil `yt-investigador-web`, el único con la web
+  activa): vídeos de YouTube con su transcripción (`hyt_youtube.py`, sin dependencias) y fuentes web. Cada hallazgo
+  lleva su cita literal, y `t_investigacion` la comprueba en el texto guardado, comprueba que el vídeo existe (oEmbed) y
+  vuelve a descargar la fuente para encontrarla. Lo que no se puede volver a comprobar va a `dudosos`.
+- `documentar` suma los hallazgos (`fuente: web/<id>`), y todo lo que el guion toma de fuera entra en `datos.json` con
+  su enlace, aunque la verificación no lo pida.
+- El primer gemelo que acaba espera (`esperando-gemelo`). Con los dos acabados se abre **una** puerta
+  `elegir-version` (marketing): la elegida empieza su cadena normal y la otra se descarta con su motivo. Si un gemelo
+  falla, el otro sigue solo; si el que falló acaba después, se archiva sin abrir otra puerta.
+- En la lista de vídeos y en el panel, los gemelos son un solo vídeo («Eligiendo versión», y después la elegida).
+
 ### Un plugin para todos los canales
 
 El plugin tiene un solo recorrido para todos los canales; lo que distingue a un canal es su configuración (`canal.json`)

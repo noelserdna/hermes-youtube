@@ -39,6 +39,8 @@ desconfianza.
    - **Dato a verificar**: algo que no está en las fuentes pero que el guion necesita, o que las fuentes dan con
      versiones distintas (todo lo de `dudosos` que se haya usado). Va a `datos` con su procedencia, para que lo
      decida una persona.
+   Todo lo que el guion toma de una pieza con `"externo": true` (de YouTube o de la web) va **siempre** a `datos`,
+   con `motivo: "externo"` y su `url` como `fuente`, aunque la cita lo sostenga: una persona lo verifica.
 4. Comprueba además que no hay nada excluido por el canal, ni datos personales, ni promesas que el canal no permite.
    Si lo hay, es un cambio obligatorio.
 5. `veredicto`: `APROBADO` solo si no hay cambios obligatorios. Nunca «aprobado con reservas».

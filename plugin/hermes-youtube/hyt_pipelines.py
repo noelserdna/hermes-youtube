@@ -73,12 +73,12 @@ B = _cargar("hyt_base")
 Rechazo = B.Rechazo
 
 PERFILES_ROL = ("yt-analista", "yt-estratega", "yt-espectador", "yt-titulador", "yt-miniaturista", "yt-investigador",
-                "yt-guionista", "yt-verificador", "yt-retencion", "yt-doble", "yt-editor-jefe")
+                "yt-investigador-web", "yt-guionista", "yt-verificador", "yt-retencion", "yt-doble", "yt-editor-jefe")
 EJECUTORES = ("hermes", "claude")
 PAPELES = ("marketing", "datos", "presentador")   # los mismos que hyt_canales.ROLES
 SI_VACIO = ("saltar",)
 TIPOS_PUERTA = ("alta", "elegir-temas", "elegir-titulo", "revision", "datos", "revision-final", "voz", "decision")
-AL_APROBAR = re.compile(r"^(nada|pipeline:[a-z0-9-]+|temas:[a-z0-9-]+|script:[A-Za-z0-9._-]+( [^;&|`$<>]*)?)$")
+AL_APROBAR = re.compile(r"^(nada|pipeline:[a-z0-9-]+(\+[a-z0-9-]+)*|temas:[a-z0-9-]+|script:[A-Za-z0-9._-]+( [^;&|`$<>]*)?)$")
 ID = re.compile(r"^[a-z][a-z0-9-]{1,40}$")
 DURACION = re.compile(r"^\d{1,3}[mh]$")
 
@@ -157,8 +157,10 @@ def cargar(pid: str, slug: str | None = None) -> dict:
 
 # Datos que el CÓDIGO deja en la carpeta del encargo antes de una etapa («prepara»: [...]): las cifras no las calcula
 # el modelo. Cada una escribe datos-<nombre>.json (ver hyt_etapa.preparar). Todavía no hay ninguna: el mecanismo queda.
-PREPARA = ("fuente", "fuentes", "inventario", "referencias", "voz", "eleccion", "ajustes", "descripcion")   # antes de la etapa
-TRAS = ("piezas", "seleccionar", "brief", "opciones", "material", "datos", "descripcion", "paquete")   # después
+PREPARA = ("fuente", "fuentes", "inventario", "referencias", "voz", "eleccion", "ajustes", "descripcion",
+           "investigacion")   # antes de la etapa
+TRAS = ("piezas", "seleccionar", "brief", "opciones", "material", "datos", "descripcion", "paquete",
+       "investigacion")   # después
 
 
 def puertas_de(p: dict | None) -> list:
@@ -258,7 +260,7 @@ def validar(p: dict) -> list:
             if all(isinstance(g, dict) and g.get("si_vacio") for g in cadena):
                 e.append("puertas: al menos una que no se salte (sin si_vacio): siempre decide una persona")
     if not AL_APROBAR.match(al_aprobar_de(p)):
-        e.append("al_aprobar: nada | pipeline:<id> | script:<fichero> [args]")
+        e.append("al_aprobar: nada | pipeline:<id>[+<id>…] (varias: versiones gemelas) | script:<fichero> [args]")
     if rehacer_de(p) and rehacer_de(p) not in vistos:
         e.append("rehacer: el id de una de sus etapas")
     if (p.get("rehacer") or p.get("al_aprobar")) and puerta is None and cadena is None:

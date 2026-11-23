@@ -50,7 +50,7 @@ ETAPAS_MODELO = [
     ("generar", "Generar temas"), ("puntuar", "Puntuar temas"),
     ("angulo", "Ángulo y brief"), ("titular", "Títulos"), ("miniaturas", "Ideas de miniatura"),
     ("espectador", "Prueba del espectador"),
-    ("documentar", "Documentar el tema"), ("escaleta", "Escaleta"), ("escribir", "Escribir el guion"),
+    ("investigar", "Investigar en YouTube y la web"), ("documentar", "Documentar el tema"), ("escaleta", "Escaleta"), ("escribir", "Escribir el guion"),
     ("verificar", "Verificar los datos"), ("retencion", "Crítica de retención"), ("voz", "Crítica de voz"),
     ("ajustar", "Ajustar el guion"),
     ("describir", "Descripción y capítulos"), ("cierre", "Cierre del paquete"),

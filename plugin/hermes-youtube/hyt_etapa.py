@@ -71,6 +71,8 @@ def contexto(slug: str, etapa: str | None = None) -> str:
           f"- Fuentes del canal (material propio, solo lectura): {d / 'fuentes'}",
           f"- Inventario de piezas: {d / 'inventario.json'}",
           f"- Referencias de oficio del plugin: {arnes / 'referencias'}"]
+    if etapa == "investigar":   # la única etapa que sale fuera: YouTube con la herramienta del plugin, la web con la suya
+        l += [f"- YouTube (buscar, transcripción, existe): python3 {Path(__file__).resolve().parent / 'hyt_youtube.py'} --help"]
     if etapa:
         try:
             mem = _cargar("hyt_wiki").para_etapa(slug, etapa, _lee(slug, etapa))
@@ -258,9 +260,11 @@ def fin(slug: str, eid: str, etapa: str, res: dict, t0: float) -> dict:
         E.guardar(slug, enc)
         if con_puerta:
             try:   # la cadena de puertas empieza (o vuelve a empezar) por la primera que no se salte
-                g = _cargar("hyt_puertas").abrir_siguiente(slug, eid, 0)
+                g = _cargar("hyt_puertas").abrir_inicial(slug, eid)   # con gemelos, espera al otro
                 if g:
                     res["puerta"] = g["id"]
+                elif E.leer(slug, eid).get("estado") in ("esperando-gemelo", "descartado"):
+                    res["resumen"] = (res.get("resumen") or "") + f" · {E.leer(slug, eid)['estado']}"
                 else:
                     res["puerta_error"] = "la cadena de puertas no deja ninguna que abrir"
             except Exception as x:   # la etapa hizo su trabajo: el fallo al abrir la puerta queda a la vista
@@ -268,6 +272,11 @@ def fin(slug: str, eid: str, etapa: str, res: dict, t0: float) -> dict:
     elif res.get("outcome") == "failed":
         enc["estado"] = "parado"
         E.guardar(slug, enc)
+        if enc.get("gemelos"):
+            try:   # si el gemelo ya acabó y lo esperaba, sigue solo
+                _cargar("hyt_puertas").gemelo_fallo(slug, eid)
+            except Exception:   # noqa: BLE001
+                pass
     B.anotar(C.carpeta(slug) / "etapas.jsonl", {
         "ts": B.ahora(), "encargo": eid, "pipeline": enc["pipeline"], "etapa": etapa,
         "tarjeta": (enc.get("tarjetas") or {}).get(etapa, ""), "resultado": res.get("outcome"),

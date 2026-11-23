@@ -57,7 +57,7 @@
   ],
   "puerta": {
     "tipo": "elegir-titulo",
-    "al_aprobar": "pipeline:guion",
+    "al_aprobar": "pipeline:guion+guion-investigado",
     "rehacer": "titular",
     "papel": "marketing"
   }

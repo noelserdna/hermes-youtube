@@ -67,10 +67,14 @@ hermes-youtube ataca ese atasco con tres reglas:
  fuentes ─▶ inventario y voz ─▶ temas ─▶ 🚪 elegir temas ─▶ título y miniatura ─▶ 🚪 elegir la pareja
                                                                                         │
      ┌──────────────────────────────────────────────────────────────────────────────────┘
+     ├─▶ guion A · solo material propio ────────────┐
+     └─▶ guion B · investigación en YouTube y web ──┴─▶ 🚪 elegir versión
+                                                              │
+     ┌────────────────────────────────────────────────────────┘
      ▼
-   guion ─▶ 🚪 revisión ─▶ 🚪 datos ─▶ 🚪 revisión final ─▶ aprobado ─▶ grabado ─▶ publicado
-     ▲           │                          │
-     └───────────┴──── rehacer (máx. 3) ────┘
+   la elegida ─▶ 🚪 revisión ─▶ 🚪 datos ─▶ 🚪 revisión final ─▶ aprobado ─▶ grabado ─▶ publicado
+     ▲              │                          │
+     └──────────────┴──── rehacer (máx. 3) ────┘
 ```
 
 1. **Fuentes.** Se cargan las transcripciones del canal. Un agente las limpia y saca un **inventario de piezas**:
@@ -87,6 +91,11 @@ hermes-youtube ataca ese atasco con tres reglas:
 5. **Guion.** Se reúne el material, se fija la escaleta, se escribe por bloques, se verifica cada afirmación y se
    critica la retención y la voz. Sale el guion limpio para el teleprompter, la descripción con capítulos y la lista de
    datos.
+   Se escriben **dos versiones del mismo guion** a la vez, con el mismo título y la misma promesa: la **A** solo con
+   el material del canal y la **B** con una investigación previa en YouTube (transcripciones) y en la web
+   (documentación, artículos y noticias recientes). Cada hallazgo de fuera lleva su cita literal y su enlace, y el
+   código vuelve a abrir la fuente para comprobarlo; lo que el guion toma de fuera va siempre a la lista de datos.
+   Una persona compara las dos en un solo correo y elige; la otra se archiva.
 6. **Revisiones.** En el orden que configure el canal. Por defecto: marketing, verificación de datos y presentador.
 
 ## El equipo de agentes
@@ -99,6 +108,7 @@ hermes-youtube ataca ese atasco con tres reglas:
 | Titulador | Treinta títulos por tema, repartidos entre palancas | No elige los cinco finales: lo hace el código con las notas |
 | Miniaturista | Tres briefs que un diseñador puede ejecutar sin preguntar | No genera imágenes ni inventa la marca |
 | Investigador | Reúne el material de un tema con su cita literal | No pasa nada excluido al guionista |
+| Investigador con web | Para la versión B: busca en YouTube y en la web lo que el material no cuenta, con cita y enlace | Es el único con acceso a la web; aporta hechos, no frases de otros creadores |
 | Guionista | Escaleta, guion por bloques y descripción | No añade datos que no estén en el material |
 | Verificador | Traza cada afirmación a su fuente y lista lo que hay que verificar | No aprueba «con reservas» |
 | Retención | Revisa solo la intro, los reenganches y el cierre | No toca el contenido |
@@ -166,7 +176,7 @@ las ejecuta Hermes; Claude Code es una opción que cada canal puede activar por 
 
 - No publica en YouTube ni en ninguna otra plataforma.
 - No genera imágenes, vídeo ni voz.
-- No inventa datos, casos ni anécdotas.
+- No inventa datos, casos ni anécdotas. Lo que trae de fuera (solo la versión B) lleva su enlace y lo verifica una persona.
 - No decide por nadie.
 
 ## Hoja de ruta

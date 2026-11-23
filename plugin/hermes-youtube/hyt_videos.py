@@ -42,13 +42,15 @@ T = _cargar("hyt_texto")
 Rechazo = B.Rechazo
 
 EMPAQUE, GUION = "titulo-miniatura", "guion"       # las dos pipelines por las que pasa un vídeo
-ESTADOS = {"elegido": "Elegido", "titulo-elegido": "Título y miniatura elegidos", "revision": "En revisión de marketing",
+GUIONES = (GUION, "guion-investigado")              # las versiones del guion (gemelos: una se elige)
+ESTADOS = {"elegido": "Elegido", "titulo-elegido": "Título y miniatura elegidos", "eligiendo": "Eligiendo versión",
+           "revision": "En revisión de marketing",
            "datos": "En verificación de datos", "revision-final": "En revisión de quien presenta",
            "rehaciendo": "Rehaciendo", "aprobado": "Aprobado", "grabado": "Grabado", "publicado": "Publicado",
            "descartado": "Descartado"}
 ORDEN = list(ESTADOS)
 PARTES = ("guion", "titulo", "descripcion", "miniatura")
-ABIERTOS = ("elegido", "titulo-elegido", "revision", "datos", "revision-final", "rehaciendo", "aprobado", "grabado")
+ABIERTOS = ("elegido", "titulo-elegido", "eligiendo", "revision", "datos", "revision-final", "rehaciendo", "aprobado", "grabado")
 
 
 def _fichero(slug: str) -> Path:
@@ -87,7 +89,7 @@ def _titulo(slug: str, enc: dict) -> str:
 
 def _estado(slug: str, enc: dict, marcas: dict) -> tuple:
     """(estado_id, incidencia, preparando) de un encargo de vídeo."""
-    est, guion = enc.get("estado"), enc.get("pipeline") == GUION
+    est, guion = enc.get("estado"), enc.get("pipeline") in GUIONES or bool(enc.get("gemelos"))
     sit = E.situacion(enc)
     incidencia = _ultimo_fallo(slug, enc["id"]) or "parado" if est == "parado" else ""
     if est == "descartado":
@@ -96,17 +98,34 @@ def _estado(slug: str, enc: dict, marcas: dict) -> tuple:
         return "elegido", incidencia, est in ("en-curso", "en-vuelta")
     if est in ("cerrado", "hecho"):
         return (marcas.get(enc["id"]) or {}).get("estado") or "aprobado", "", False
+    if est == "en-puerta" and enc.get("puerta_id") and not enc.get("gemelos_resuelto") and enc.get("gemelos"):
+        return "eligiendo", "", False
     if est == "en-puerta" and sit["puerta"]:
         tipo = sit["puerta"]["tipo"]
         return (tipo if tipo in ESTADOS else "revision"), "", False
+    if est == "esperando-gemelo":
+        return "titulo-elegido", "", True
     rehecho = sit["ronda"] > 0 or int(enc.get("relanzamientos") or 0) > 0
     return ("rehaciendo" if rehecho else "titulo-elegido"), incidencia, est in ("en-curso", "en-vuelta")
 
 
 def lista(slug: str) -> list:
     """Todos los vídeos del canal, en marcha y terminados, del más reciente al más antiguo."""
-    encargos = [e for e in E.listar(slug) if e.get("pipeline") in (EMPAQUE, GUION)]
-    con_guion = {e.get("origen") for e in encargos if e.get("pipeline") == GUION and e.get("origen")}
+    encargos = [e for e in E.listar(slug) if e.get("pipeline") in (EMPAQUE, *GUIONES) or e.get("gemelos")]
+    con_guion = {e.get("origen") for e in encargos if (e.get("pipeline") in GUIONES or e.get("gemelos")) and e.get("origen")}
+    # gemelos (versiones del mismo guion): un solo vídeo. Manda la versión elegida; antes, la primera que siga viva.
+    por_id = {e["id"]: e for e in encargos}
+    fuera = set()
+    for e in encargos:
+        ids = e.get("gemelos") or []
+        if len(ids) < 2 or e["id"] in fuera:
+            continue
+        grupo = [por_id[x] for x in ids if x in por_id]
+        rep = next((g for g in grupo if g.get("gemelos_resuelto") and g.get("estado") != "descartado"), None) \
+            or next((g for g in sorted(grupo, key=lambda g: g.get("version_letra") or "Z") if g.get("estado") != "descartado"), None) \
+            or grupo[0]
+        fuera |= {g["id"] for g in grupo if g["id"] != rep["id"]}
+    encargos = [e for e in encargos if e["id"] not in fuera]
     marcas = _datos(slug)["marcas"]
     tope = E.rondas_max(slug)
     out = []
@@ -116,8 +135,14 @@ def lista(slug: str) -> list:
         est, incidencia, preparando = _estado(slug, e, marcas)
         sit = E.situacion(e)
         puerta = {"id": e.get("puerta_id", ""), "tipo": sit["puerta"]["tipo"], "papel": sit["puerta"]["papel"]} if sit["puerta"] else None
+        if est == "eligiendo":
+            try:
+                g = _cargar("hyt_puertas").leer(e["puerta_id"])
+            except Exception:   # noqa: BLE001
+                g = {}
+            puerta = {"id": e["puerta_id"], "tipo": "elegir-version", "papel": g.get("papel") or "marketing"}
         out.append({"encargo": e["id"], "titulo": _titulo(slug, e), "pilar": (e.get("params") or {}).get("pilar", ""),
-                    "estado": ESTADOS[est], "estado_id": est, "ronda": sit["ronda"], "rondas_max": tope, "puerta": puerta,
+                    "version": e.get("version") or "", "estado": ESTADOS[est], "estado_id": est, "ronda": sit["ronda"], "rondas_max": tope, "puerta": puerta,
                     "incidencia": incidencia, "preparando": preparando,
                     "actualizado": (marcas.get(e["id"]) or {}).get("fecha") or e.get("creado", "")})
     return sorted(out, key=lambda v: v["actualizado"], reverse=True)

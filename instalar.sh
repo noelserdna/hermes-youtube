@@ -12,7 +12,7 @@
 #   ~/.hermes/hermes-youtube/<versión> + enlace «actual», instalacion.json, aprobadores.json (si no existe)
 #   el plugin hermes-youtube activado (Telegram, notario, sección de prompt) y la CLI hyt en ~/.local/bin
 #   perfiles: yt-estacion (mueve tarjetas) y los de rol (yt-analista, yt-estratega, yt-espectador, yt-titulador,
-#   yt-miniaturista, yt-investigador, yt-guionista, yt-verificador, yt-retencion, yt-doble, yt-editor-jefe), con sus
+#   yt-miniaturista, yt-investigador, yt-investigador-web (el único con web), yt-guionista, yt-verificador, yt-retencion, yt-doble, yt-editor-jefe), con sus
 #   cartas y las skills del arnés
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -109,7 +109,7 @@ for kv in "terminal.timeout 9600" "terminal.lifetime_seconds 9600" "timeouts.too
 done
 "$HERMES" -p yt-estacion config set approvals.deny "$DENY" >/dev/null 2>&1 || true
 
-ROLES="yt-analista yt-estratega yt-espectador yt-titulador yt-miniaturista yt-investigador yt-guionista yt-verificador yt-retencion yt-doble yt-editor-jefe"
+ROLES="yt-analista yt-estratega yt-espectador yt-titulador yt-miniaturista yt-investigador yt-investigador-web yt-guionista yt-verificador yt-retencion yt-doble yt-editor-jefe"
 for P in $ROLES; do
   if ! existe "$P"; then
     "$HERMES" profile create "$P" --no-alias --no-skills \
@@ -119,7 +119,13 @@ for P in $ROLES; do
   carta "$P"
   "$HERMES" -p "$P" config set skills.external_dirs "$(skills_dirs)" >/dev/null 2>&1 || true
   "$HERMES" -p "$P" config set approvals.deny "$DENY" >/dev/null 2>&1 || true
-  "$HERMES" -p "$P" tools disable web browser image_gen tts computer_use cronjob delegation >/dev/null 2>&1 || true
+  # solo material propio, sin web; la excepción es quien investiga la versión con fuentes externas (búsqueda y lectura)
+  if [ "$P" = yt-investigador-web ]; then
+    "$HERMES" -p "$P" tools enable web >/dev/null 2>&1 || true
+    "$HERMES" -p "$P" tools disable browser image_gen tts computer_use cronjob delegation >/dev/null 2>&1 || true
+  else
+    "$HERMES" -p "$P" tools disable web browser image_gen tts computer_use cronjob delegation >/dev/null 2>&1 || true
+  fi
   env_linea "$P" TERMINAL_MAX_FOREGROUND_TIMEOUT 2400
   for kv in "terminal.timeout 2400" "terminal.lifetime_seconds 2400" "timeouts.tools.sequential_call 2400" \
             "timeouts.tools.concurrent_batch 2400" "display.language es"; do

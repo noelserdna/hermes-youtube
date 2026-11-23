@@ -119,6 +119,8 @@ for trozo in ("Arroz suelto: la regla del agua", "Promesa: Arroz suelto siempre"
               "Reparto con el título", "1. El arroz no se pasa por el tiempo.", "4. El grano hace el resto.", "00:00 La regla del agua", "nota 82",
               "La intro tiene 80 palabras", "El cierre enlaza bien", "El dato 1 [pendiente]", "Puerta 1 de 3 · decide: marketing"):
     assert trozo.lower() in e["text"].lower(), trozo
+for trozo in ("Arroz suelto: la regla del agua", "Arroz suelto siempre", "¿AGUA O TIEMPO?", "Dos cazuelas", "El arroz no se pasa por el tiempo.",
+              "00:00 La regla del agua", "nota 82", "La intro tiene 80 palabras", "El cierre enlaza bien", "El dato 1", "Puerta 1 de 3", "Espera a: marketing (Marta, Mario)"):
     assert __import__("html").escape(trozo) in e["html"], trozo
 assert "Foto que hay que pedir" not in e["text"] and "ha cambiado" not in e["text"]                       # eso es para quien graba; y no hay versión anterior
 assert set(c) == {"acepto", "cambios", "rechazo", "deshacer"} and len(set(c.values())) == 4
@@ -251,7 +253,7 @@ m = para("marta@ejemplo.com", env)[-1]
 for trozo in ("1. [arroces] Arroz al horno\nResumen de Arroz al horno\nNota: 21 · «Yo vería Arroz al horno»", "2. [guisos] El sofrito lento", "Parecido a: El sofrito de siempre",
               "SUPLENTES", "4. [arroces] Arroz caldoso", "El pilar «arroces» se queda corto", "escribe los números, por ejemplo: 1, 4, 7"):
     assert trozo in m["text"], trozo
-assert "<ol start=\x274\x27" in m["html"] and set(c) == {"algunas", "cambios", "rechazo", "deshacer"}
+assert "Arroz caldoso" in m["html"] and ">4</div>" in m["html"] and set(c) == {"algunas", "cambios", "rechazo", "deshacer"}
 assert cuerpo(m["html"], "ELEGIR") == "ELEGIR " + c["algunas"] + ": " + HC.AYUDA_TEMAS and cuerpo(m["html"], "OTRA") == "OTRA " + c["cambios"] and cuerpo(m["html"], "NINGUNO").startswith("NINGUNO " + c["rechazo"])
 n = len(env)
 assert llega("marta@ejemplo.com", "Re: temas", "Me gustan mucho el primero y el tercero de la lista que has mandado", mid(m)) == "texto libre en una puerta que no lo admite: botones"
@@ -341,6 +343,99 @@ mas = nuevos(n)
 assert sorted(e["to"] for e in mas) == ["mario@ejemplo.com", "marta@ejemplo.com"] and all(e["subject"] == "⏳ Te esperan 2 decisión(es)" for e in mas)
 t = mas[0]["text"]; assert "espera desde hace 2 días" in t and t.count("•") == 2 and t.index("2 días") < t.index("0 h")
 assert HC.resumen() == 0 and len(enviados()) == n + 2               # hoy ya se envió
+'
+
+caso "elegir versión: A frente a B, lo que aportó la investigación (fuentes con enlace) y un botón por versión que ya lleva su letra; decide A o B por correo" '
+import html as H, re
+G = "## intro\nEl arroz no se pasa por el tiempo. Se pasa por el agua.\n## desarrollo-1\nMide el agua antes de encender el fuego. El grano hace el resto. Sin remover.\n## cierre\nEso es el agua. Queda el fuego.\n"
+def gemelo(letra, version, extra=""):
+    e = E.lanzar("demo", "guion", {"tema": "Arroz con dos versiones " + letra, "pilar": "arroces"}); d = E.carpeta("demo", e["id"])
+    g = G.replace("Sin remover.", "Sin remover. " + extra) if extra else G
+    (d / "guion.md").write_text(g); (d / "guion-numerado.md").write_text(__import__("hyt_pasos").numerado(g))
+    B.escribir(d / "escaleta.json", {"bloques": [{"id": "desarrollo-1", "palabras": 15}, {"id": "cierre", "palabras": 8}]})
+    datos = [{"id": "d1", "dato": "El dato propio " + letra, "frase": "Se pasa por el agua.", "fuente": "charlas/v01", "estado": "pendiente"}]
+    if extra:
+        datos.append({"id": "d2", "dato": "El almidón se suelta a 90 grados", "frase": extra, "motivo": "externo", "fuente": "https://ciencia.ejemplo.org/almidon", "estado": "pendiente"})
+    B.escribir(d / "datos.json", {"datos": datos})
+    B.escribir(d / "cierre.json", {"veredicto": "CAMBIOS" if extra else "APROBADO", "notas": [],
+                                   "cambios": [{"bloque": "cierre", "frase": "Queda el fuego.", "motivo": "No lleva al vídeo", "quedaria": "Lo siguiente, el fuego: en este vídeo."}] if extra else []})
+    B.escribir(d / "paquete.json", {"titulo": "Arroz suelto: la regla del agua", "miniatura": {"texto": "¿AGUA O TIEMPO?"}, "promesa": "Arroz suelto siempre",
+                                    "guion": {"palabras": 25 + (8 if extra else 0), "minutos": 0.2}, "datos": datos,
+                                    "revision": {"nota": 80, "graves": 0, "avisos": [{"grave": False, "texto": "Aviso de la versión " + letra}]}})
+    if extra:
+        B.escribir(d / "investigacion.json", {"fuentes": [{"id": "w1", "url": "https://www.youtube.com/watch?v=abc123", "titulo": "La ciencia del arroz", "autor_o_canal": "Canal Ciencia", "fecha": "2025-03", "tipo": "youtube"},
+                                                          {"id": "w2", "url": "https://ciencia.ejemplo.org/almidon", "titulo": "Almidón y temperatura", "autor_o_canal": "Revista", "fecha": "2024", "tipo": "articulo", "comprobada": False}],
+                                              "hallazgos": [{"fuente": "w2", "url": "https://ciencia.ejemplo.org/almidon", "cita": "a 90 grados", "dicho": "El almidón se suelta a 90 grados", "aporta": "explicación", "una_fuente": True, "comprobado": False}],
+                                              "huecos_cubiertos": ["Por qué el caldo a borbotones apelmaza"]})
+    enc = E.leer("demo", e["id"]); enc.update(version_letra=letra, version=version); E.guardar("demo", enc)
+    return E.leer("demo", e["id"])
+a, b = gemelo("A", "propia"), gemelo("B", "investigada", "Según la ciencia, el almidón se suelta a 90 grados.")
+if hasattr(PU, "abrir_eleccion") and "elegir-version" in PU.OPCIONES:
+    g = PU.abrir_eleccion("demo", [b, a])["id"]
+else:   # hyt_puertas aún sin elegir-version: la puerta, a mano, con la forma acordada
+    import secrets
+    g = f"g{int(time.time()):x}{secrets.token_hex(3)}"
+    B.escribir(PU.indice(g), {"id": g, "tipo": "elegir-version", "canal": "demo", "encargo": a["id"], "titulo": "⚖️ Elegir versión del guion · Cocina Clara", "texto": "",
+        "opciones": [{"verbo": "algunas", "etiqueta": "✅ Elegir versión", "texto": True, "valores": ["A", "B"]}, {"verbo": "rechazo", "etiqueta": "🗑 Ninguna", "texto": True}],
+        "papel": "marketing", "gemelos": [{"version": "propia", "letra": "A", "encargo": a["id"]}, {"version": "investigada", "letra": "B", "encargo": b["id"]}],
+        "indice": -1, "total": 1, "ronda": 0, "al_aprobar": "nada", "revision": {}, "creada": B.ahora(), "estado": "abierta"})
+n = len(enviados()); assert HC.enviar_puertas() >= 1
+m = [e for e in nuevos(n) if e["to"] == "marta@ejemplo.com" and "Elegir versión" in e["subject"]][-1]; h, t = m["html"], m["text"]; c = cod(g)
+assert set(c) == {"algunas:A", "algunas:B", "rechazo", "deshacer"} and len(set(c.values())) == 4, c
+for trozo in ("A frente a B", "Versión A · propia", "Versión B · investigada", "Qué aportó la investigación", "La ciencia del arroz", "Por qué el caldo a borbotones apelmaza",
+              "Aviso de la versión B", "Lo siguiente, el fuego: en este vídeo.", "Según la ciencia, el almidón se suelta a 90 grados."):
+    assert H.escape(trozo) in h, trozo
+assert "href=\x27https://www.youtube.com/watch?v=abc123\x27" in h and "href=\x27https://ciencia.ejemplo.org/almidon\x27" in h      # las fuentes externas, con enlace
+assert "Puerta 0" not in h and "Puerta 0" not in t and "sin comprobar" in h and "[sin comprobar]" in t
+assert "Palabras: A 25 · B 33" in t and "Datos por verificar: A 1 · B 2 (1 externos)" in t and "Cambios del editor jefe: A 0 · B 1" in t, t
+botones = {}
+for enlace in re.findall(r"href=\"(mailto:[^\"]+)\"", h):
+    q = __import__("urllib.parse").parse.parse_qs(__import__("urllib.parse").parse.urlsplit(H.unescape(enlace)).query)
+    botones[q["subject"][0]] = q["body"][0]
+assert botones == {"ELEGIR " + c["algunas:A"]: "ELEGIR " + c["algunas:A"] + ": A", "ELEGIR " + c["algunas:B"]: "ELEGIR " + c["algunas:B"] + ": B",
+                   "RECHAZAR " + c["rechazo"]: "RECHAZAR " + c["rechazo"] + ": " + HC.AYUDA_MOTIVO}, botones
+assert h.index("Elegir A") < h.index("Elegir B") < h.index("Versión A · propia")                       # se decide antes de los guiones
+assert ("ELEGIR " + c["algunas:A"] + ": A") in t and len(h.encode()) < 100_000
+assert llega("marta@ejemplo.com", "Re: versión", "Me quedo con la B, la investigada, sin duda alguna", mid(m)) == "texto libre en una puerta que no lo admite: botones"
+# el botón de B decide B (aunque lo enviado diga otra cosa detrás: manda el código)
+assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas:B"], botones["ELEGIR " + c["algunas:B"]]) == f"decidida {g} (algunas)"
+p = PU.leer(g); assert p["decision"]["verbo"] == "algunas" and p["decision"]["texto"] == "B"
+assert "Elegir B" in enviados()[-1]["text"] and "DESHACER " + c["deshacer"] in enviados()[-1]["text"]
+assert llega("marta@ejemplo.com", "DESHACER " + c["deshacer"], "DESHACER " + c["deshacer"]) == f"deshecha {g}"
+HC.enviar_puertas(); c = cod(g)
+assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas:A"], "ELEGIR " + c["algunas:A"] + ": B") == f"decidida {g} (algunas)" and PU.leer(g)["decision"]["texto"] == "A"
+p = firma_ya(g)
+assert p["estado"] == "firmada" and "versión A" in p["resultado"] and E.leer("demo", b["id"])["estado"] == "descartado", (p.get("estado"), p.get("resultado"))
+# si el correo pasara del tope, los guiones se recortan (con enlace al panel) y el texto sigue entero
+tope = HC.TOPE_HTML
+try:
+    HC.TOPE_HTML = len(HC.componer({**PU.leer(g), "estado": "abierta"}, c)["html"].encode()) - 1
+    r = HC.componer({**PU.leer(g), "estado": "abierta"}, c)
+    assert len(r["html"].encode()) <= HC.TOPE_HTML and "bloque(s) de este guion" in r["html"] and "https://panel.ejemplo.com/youtube" in r["html"]
+    assert "Eso es el agua." in r["texto"].split("VERSIÓN B")[-1]
+finally:
+    HC.TOPE_HTML = tope
+HC.enviar_puertas(); enviados()                                                                          # la puerta que abre la versión elegida sale ya
+'
+caso "toda la salida: HTML sin <style>, <script> ni imágenes remotas, por debajo de 100 KB, con su texto plano; cada botón lleva su palabra y un código de una puerta" '
+import html as H, re, urllib.parse as U
+todos = enviados(); assert len(todos) > 40
+vigentes = {c for p in PU.puertas(("abierta",)) for c in ((p.get("correo") or {}).get("codigos") or {}).values()}
+assert vigentes
+tipos = set()
+for e in todos:
+    h = e["html"]; tipos.add(e["subject"][:1])
+    assert not re.search(r"<style|<script|<img[^>]+src=.http|<link", h, re.I), e["subject"]
+    assert len(h.encode()) < 100_000 and e["text"].strip() and "max-width:640px" in h, e["subject"]
+    for enlace in re.findall(r"href=\"(mailto:[^\"]+)\"", h):
+        asunto = U.parse_qs(U.urlsplit(H.unescape(enlace)).query)["subject"][0]
+        if asunto in ("PROPUESTA", "ESTADO", "TEMA:"):
+            continue
+        palabra, codigo = asunto.split(" ", 1)
+        assert palabra in HC.PALABRAS and HC.CODIGO.fullmatch(asunto) and len(codigo) >= 12, asunto
+        vigentes.discard(codigo)
+assert vigentes <= {c for p in PU.puertas(("abierta",)) for c in [((p.get("correo") or {}).get("codigos") or {}).get("deshacer")]}, vigentes   # cada código vigente salió en un botón (deshacer va en la confirmación)
+assert {"🚪", "🕒", "✅", "🎬", "🗑", "⏳", "📋"} <= tipos, tipos
 '
 
 # ── la CLI y el ciclo ──

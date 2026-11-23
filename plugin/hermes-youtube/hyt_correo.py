@@ -8,7 +8,11 @@ recoge, envía lo pendiente y firma lo decidido.
   · Puertas: cada puerta abierta se envía a las personas del canal con su papel (sin papel, a las de marketing), con el
     contenido completo y botones mailto: que llevan un código de un solo uso por opción (APROBAR <código>, REHACER
     <código>: …, RECHAZAR <código>; ELEGIR, OTRA y NINGUNO en las de elegir). Decide el código: el remitente es una
-    persona de ese canal con ese papel, el código es de una puerta abierta y el contenido no ha cambiado.
+    persona de ese canal con ese papel, el código es de una puerta abierta y el contenido no ha cambiado. Si una
+    opción admite varios valores (elegir-version: «algunas» con A o B), sale un botón y un código por valor
+    (clave «algunas:A»): el código ya dice qué se elige.
+  · Todos los correos usan una plantilla (cabecera de color por tipo, fichas, vista previa como en YouTube, guion por
+    bloques, botones por color), con tablas y estilos en línea, sin imágenes ni <style>, y por debajo de 95 KB.
   · APROBAR se firma al momento. Lo demás deja una ventana para deshacer (DESHACER <código>).
   · Una respuesta sin código en el hilo de una revisión o de la voz, con una instrucción, vale como REHACER. Un «ok» o
     un «gracias» no deciden nada. En las puertas de datos y de elegir, un texto libre nunca decide.
@@ -174,7 +178,7 @@ def encolar(slug: str, a: str, asunto: str, texto: str, html_: str = "", en_resp
     """Deja un correo en la cola de salida. `puerta`: la puerta de la que habla (para reconocer las respuestas en su hilo)."""
     if not a:
         return None
-    m = {"canal": slug, "tipo": tipo, "to": a, "subject": asunto[:300], "text": texto, "html": html_ or _html(asunto, texto),
+    m = {"canal": slug, "tipo": tipo, "to": a, "subject": asunto[:300], "text": texto, "html": html_ or _html(asunto, texto, tipo=tipo, canal=slug),
          "in_reply_to": en_respuesta_a, "puerta": puerta, "creado": B.ahora()}
     f = _dir() / "salida" / f"{int(time.time() * 1000)}-{secrets.token_hex(3)}.json"
     B.escribir(f, m)
@@ -204,47 +208,171 @@ def _mailto(asunto: str, cuerpo: str) -> str:
     return f"mailto:{conf().get('HYT_CORREO_BUZON', '')}?{q}"
 
 
-def _boton(palabra: str, codigo: str, etiqueta: str, extra: str = "", color: str = "#126a8a") -> str:
-    """Un botón que abre un correo ya escrito: «PALABRA código» en el asunto y en el cuerpo (con `extra` detrás)."""
+# ── aspecto: una plantilla para todos los correos ───────────────────────────────────────────────────────────────────
+# Tablas y estilos en línea (Gmail quita <style> y no carga CSS externo), sin imágenes, y contrastes fuertes: si el
+# cliente invierte los colores a oscuro, el texto oscuro sobre fondo claro (y el blanco sobre fondo de color) se sigue
+# leyendo. Gmail corta un correo a partir de 102 KB: por encima de TOPE_HTML se recortan los guiones.
+TOPE_HTML = 95_000
+LETRA = "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif"   # sin comillas: va dentro de style='…'
+TINTA, TINTA2 = "#1c1f24", "#3a3f47"           # texto y texto secundario (nunca gris claro)
+FONDO, PAPEL, CARTA, LINEA = "#e9e4da", "#fbf8f2", "#ffffff", "#cfc6b6"
+VERDE, AMBAR, ROJO, AZUL, PIZARRA = "#166534", "#a1450a", "#b91c1c", "#1d4ed8", "#334155"
+SUAVE = {"mal": ("#fde4e4", "#e7a0a0", "#7a1010"), "ojo": ("#fdf0d5", "#e6c27a", "#5c3906"),
+         "bien": ("#dff3e4", "#94cfa4", "#0f4d24"), "": ("#f3efe7", LINEA, TINTA)}   # (fondo, borde, texto)
+# tipo: (nombre, color de cabecera, color de la franja)
+TIPOS = {"revision": ("Revisión del guion", "#1e3a8a", "#3b82f6"),
+         "revision-final": ("Revisión final", "#4c1d95", "#8b5cf6"),
+         "datos": ("Datos por verificar", "#134e4a", "#14b8a6"),
+         "elegir-temas": ("Elegir temas", "#7c2d12", "#f97316"),
+         "elegir-titulo": ("Elegir título y miniatura", "#7c2d12", "#f59e0b"),
+         "elegir-version": ("Elegir versión", "#701a75", "#d946ef"),
+         "voz": ("Perfil de voz", "#164e63", "#06b6d4"),
+         "alta": ("Alta", "#1e293b", "#64748b"), "decision": ("Decisión", "#1e3a8a", "#3b82f6"),
+         "aprobado": ("Listo para grabar", "#14532d", "#22c55e"), "resultado": ("Hecho", "#14532d", "#22c55e"),
+         "confirmacion": ("Recibido", "#1e293b", "#64748b"), "aviso": ("Aviso", "#7f1d1d", "#ef4444"),
+         "resumen": ("Pendientes", "#78350f", "#f59e0b"), "respuesta": ("Respuesta", "#1e3a8a", "#3b82f6"),
+         "ayuda": ("Ayuda", "#1e3a8a", "#3b82f6"), "prueba": ("Prueba", "#1e293b", "#64748b"),
+         "no-autorizado": ("Aviso", "#1e293b", "#64748b")}
+COLOR_PALABRA = {"APROBAR": VERDE, "ELEGIR": VERDE, "REHACER": AMBAR, "OTRA": AMBAR, "RECHAZAR": ROJO, "NINGUNO": ROJO,
+                 "DESHACER": PIZARRA}
+E_ = html.escape
+
+
+def _tabla(contenido: str, estilo: str = "", ancho: str = "100%") -> str:
+    return (f"<table role='presentation' width='{ancho}' cellpadding='0' cellspacing='0' border='0' "
+            f"style='border-collapse:separate;{estilo}'>{contenido}</table>")
+
+
+def _chip(t: str, fondo: str = "#ffffff", color: str = TINTA, borde: str = "") -> str:
+    return (f"<span style='display:inline-block;margin:0 6px 6px 0;padding:3px 10px;border-radius:999px;background:{fondo};"
+            f"color:{color};font-size:13px;font-weight:700;line-height:1.5;{'border:1px solid ' + borde if borde else ''}'>{E_(str(t))}</span>")
+
+
+def _enlace(url: str, texto: str = "") -> str:
+    return (f"<a href='{E_(url, quote=True)}' style='color:{AZUL};font-weight:600;text-decoration:underline;word-break:break-word'>"
+            f"{E_(texto or url)}</a>")
+
+
+def _externo(x: dict) -> bool:
+    """Un dato que viene de fuera del material del canal (lo trajo la investigación): con motivo «externo» o fuente web."""
+    return _es_url(x.get("fuente")) or str(x.get("fuente") or "").startswith("web/") or \
+        (x.get("motivo") == "externo" and not str(x.get("fuente") or "").startswith(("charlas/", "docs/")))
+
+
+def _es_url(x) -> bool:
+    return isinstance(x, str) and bool(re.match(r"https?://\S+$", x.strip()))
+
+
+def _dominio(url: str) -> str:
+    return re.sub(r"^www\.", "", urllib.parse.urlsplit(url).netloc) or url
+
+
+def _boton(palabra: str, codigo: str, etiqueta: str, extra: str = "", color: str = "", ayuda: str = "") -> str:
+    """Un botón grande que abre un correo ya escrito: «PALABRA código» en el asunto y en el cuerpo (con `extra` detrás).
+    Su color sale del verbo (aprobar y elegir, verde; rehacer, ámbar; rechazar, rojo); `ayuda`, una línea debajo."""
     cabeza = f"{palabra} {codigo}".strip()
-    return (f'<a href="{html.escape(_mailto(cabeza, cabeza + extra))}" style="display:inline-block;padding:12px 18px;margin:4px 6px 4px 0;'
-            f'border-radius:8px;background:{color};color:#fff;text-decoration:none;font-weight:600;font-size:16px">'
-            f'{html.escape(etiqueta)}</a>')
+    color = color or COLOR_PALABRA.get(palabra, AZUL)
+    return _tabla(f"<tr><td style='border-radius:12px;background:{color}' bgcolor='{color}'>"
+                  f"<a href=\"{E_(_mailto(cabeza, cabeza + extra))}\" style='display:block;padding:15px 18px;border-radius:12px;"
+                  f"color:#ffffff;text-decoration:none;text-align:center;font-family:{LETRA};font-size:18px;font-weight:800;"
+                  f"line-height:1.25'>{E_(etiqueta)}</a></td></tr>"
+                  + (f"<tr><td style='padding:6px 4px 0;font-size:14px;line-height:1.4;color:{TINTA2}'>{E_(ayuda)}</td></tr>" if ayuda else ""),
+                  "margin:0 0 14px")
+
+
+def _boton_web(url: str, etiqueta: str, color: str = AZUL) -> str:
+    """Un botón que abre una página (el panel): no decide nada."""
+    return _tabla(f"<tr><td style='border-radius:12px;background:{color}' bgcolor='{color}'><a href='{E_(url, quote=True)}' "
+                  f"style='display:block;padding:14px 18px;border-radius:12px;color:#ffffff;text-decoration:none;text-align:center;"
+                  f"font-size:17px;font-weight:800'>{E_(etiqueta)}</a></td></tr>", "margin:8px 0 14px")
 
 
 PIE = ("Cada botón abre un correo ya escrito: solo tienes que enviarlo. Un «sí» escrito a mano no decide nada. "
        "Te escribe hermes-youtube, un sistema de agentes: ninguno de ellos aprueba ni publica nada.")
 
 
-def _envolver(titulo: str, cuerpo_html: str, botones: list | None = None, ayuda: str = "") -> str:
-    return ("<div style='font-family:system-ui,-apple-system,sans-serif;max-width:640px;font-size:16px;line-height:1.5;color:#1a1a1a'>"
-            f"<h2 style='font-size:19px;margin:0 0 12px'>{html.escape(titulo)}</h2>{cuerpo_html}"
-            + (f"<p style='margin:18px 0 6px'>{''.join(botones)}</p>" if botones else "")
-            + (f"<p style='font-size:14px;color:#444'>{html.escape(ayuda)}</p>" if ayuda else "")
-            + f"<p style='color:#666;font-size:12px;margin-top:18px'>{html.escape(PIE)}</p></div>")
+def _nombre_canal(slug: str) -> str:
+    try:
+        return str(C.leer(slug).get("nombre") or slug) if slug else ""
+    except Exception:   # noqa: BLE001
+        return slug
 
 
-def _html(titulo: str, cuerpo: str, botones: list | None = None, ayuda: str = "") -> str:
-    """Un correo sencillo: el texto tal cual (respetando sus saltos de línea) y, si los hay, sus botones."""
-    pre = f"<div style='white-space:pre-wrap'>{html.escape(cuerpo)}</div>"
-    return _envolver(titulo, pre, botones, ayuda)
+def _envolver(titulo: str, cuerpo_html: str, botones: list | None = None, ayuda: str = "", tipo: str = "aviso",
+              canal: str = "", chips: list | None = None, cola_html: str = "") -> str:
+    """La plantilla común: cabecera de color (canal, tipo, título y chips), franja del tipo, cuerpo, botones y pie.
+    `cola_html` va después de los botones (lo largo, para que decidir no quede al final de todo)."""
+    nombre, oscuro, franja = TIPOS.get(tipo, TIPOS["aviso"])
+    arriba = " · ".join(x for x in (_nombre_canal(canal), nombre) if x)
+    cab = (f"<tr><td bgcolor='{oscuro}' style='background:{oscuro};padding:20px 22px 14px;color:#ffffff'>"
+           f"<div style='font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#ffffff'>{E_(arriba)}</div>"
+           f"<div style='font-size:23px;font-weight:800;line-height:1.25;margin:6px 0 10px;color:#ffffff'>{E_(titulo)}</div>"
+           + "".join(_chip(c, "#ffffff", oscuro) for c in chips or [] if c) + "</td></tr>"
+           f"<tr><td bgcolor='{franja}' style='background:{franja};height:6px;line-height:6px;font-size:0'>&nbsp;</td></tr>")
+    decidir = ""
+    if botones:
+        decidir = (f"<tr><td style='padding:6px 20px 4px'>"
+                   f"<div style='font-size:18px;font-weight:800;color:{TINTA};margin:10px 0 12px'>Decide</div>{''.join(botones)}"
+                   + (f"<div style='font-size:14px;line-height:1.45;color:{TINTA2};margin:2px 0 8px'>{E_(ayuda)}</div>" if ayuda else "")
+                   + "</td></tr>")
+    elif ayuda:
+        decidir = f"<tr><td style='padding:0 20px 8px;font-size:14px;color:{TINTA2}'>{E_(ayuda)}</td></tr>"
+    cuerpo = (f"<tr><td style='padding:16px 20px 6px;color:{TINTA};font-size:16px;line-height:1.5'>{cuerpo_html}</td></tr>"
+              + decidir
+              + (f"<tr><td style='padding:6px 20px 6px;color:{TINTA};font-size:16px;line-height:1.5'>{cola_html}</td></tr>" if cola_html else "")
+              + f"<tr><td style='padding:14px 20px 20px;border-top:1px solid {LINEA};font-size:13px;line-height:1.45;color:{TINTA2}'>"
+              f"{E_(PIE)}</td></tr>")
+    caja = (f"<table role='presentation' align='center' width='100%' cellpadding='0' cellspacing='0' border='0' "
+            f"style='max-width:640px;margin:0 auto;border-collapse:separate;background:{PAPEL};border:1px solid {LINEA};"
+            f"border-radius:16px;overflow:hidden' bgcolor='{PAPEL}'>{cab}{cuerpo}</table>")
+    return (f"<div style='background:{FONDO};padding:14px 6px;font-family:{LETRA};color:{TINTA};-webkit-text-size-adjust:100%'>"
+            f"{caja}</div>")
+
+
+def _parrafos(texto: str) -> str:
+    """Texto suelto en HTML: un párrafo por hueco, los «• …» como lista y los saltos de línea respetados."""
+    out = []
+    for trozo in re.split(r"\n\s*\n", str(texto).strip()):
+        lineas = trozo.splitlines()
+        if lineas and all(l.lstrip().startswith(("•", "- ")) for l in lineas):
+            out += [f"<div style='margin:0 0 8px;padding:10px 12px;border-radius:10px;background:{CARTA};border:1px solid {LINEA}'>"
+                    f"{E_(l.lstrip('•- ').strip())}</div>" for l in lineas]
+        elif trozo.strip():
+            out.append(f"<p style='margin:0 0 12px;white-space:pre-wrap'>{E_(trozo)}</p>")
+    return "".join(out)
+
+
+def _html(titulo: str, cuerpo: str, botones: list | None = None, ayuda: str = "", tipo: str = "aviso", canal: str = "") -> str:
+    """Un correo sencillo con la plantilla común: el texto (respetando sus saltos de línea) y, si los hay, sus botones."""
+    return _envolver(titulo, _parrafos(cuerpo), botones, ayuda, tipo, canal)
 
 
 class Doc:
-    """El contenido de un correo, una vez: sale como texto y como HTML legible en un móvil."""
+    """El contenido de un correo, una vez: sale como texto (legible tal cual) y como HTML visual para el móvil.
+    `limite`: cuántos bloques de cada guion se enseñan en el HTML (None, todos); el texto va siempre completo."""
 
-    def __init__(self):
+    def __init__(self, limite: int | None = None):
         self.t, self.h = [], []
+        self.limite = limite
+        self.recortado = False
 
-    def titulo(self, t: str):
+    def crudo(self, h: str, t=None):
+        """HTML hecho a mano y, aparte, su texto (una cadena o una lista de líneas)."""
+        if h:
+            self.h.append(h)
+        if t:
+            self.t += [t] if isinstance(t, str) else list(t)
+
+    def titulo(self, t: str, icono: str = ""):
         self.t += ["", t.upper(), ""]
-        self.h.append(f"<h3 style='font-size:16px;margin:20px 0 6px;border-bottom:1px solid #ddd;padding-bottom:4px'>{html.escape(t)}</h3>")
+        self.h.append(f"<div style='font-size:18px;font-weight:800;color:{TINTA};margin:26px 0 10px;padding-bottom:6px;"
+                      f"border-bottom:2px solid {LINEA}'>{E_(icono + ' ' if icono else '')}{E_(t)}</div>")
 
     def parrafo(self, t: str, fuerte: bool = False):
         if str(t).strip():
             self.t.append(str(t))
-            estilo = "margin:6px 0;font-weight:600" if fuerte else "margin:6px 0"
-            self.h.append(f"<p style='{estilo};white-space:pre-wrap'>{html.escape(str(t))}</p>")
+            estilo = "margin:6px 0;font-weight:700" if fuerte else "margin:6px 0"
+            self.h.append(f"<p style='{estilo};white-space:pre-wrap'>{E_(str(t))}</p>")
 
     def lista(self, items: list, numerada_desde: int | None = None):
         items = [str(x) for x in items if str(x).strip()]
@@ -252,22 +380,270 @@ class Doc:
             return
         for i, x in enumerate(items):
             self.t.append((f"{numerada_desde + i}. " if numerada_desde is not None else "- ") + x)
-        etiqueta = f"ol start='{numerada_desde}'" if numerada_desde is not None else "ul"
-        self.h.append(f"<{etiqueta} style='margin:6px 0;padding-left:24px'>"
-                      + "".join(f"<li style='margin:6px 0;white-space:pre-wrap'>{html.escape(x)}</li>" for x in items)
-                      + f"</{etiqueta.split()[0]}>")
+        self.h.append("".join(
+            f"<div style='margin:0 0 8px;padding:10px 12px;border-radius:10px;background:{CARTA};border:1px solid {LINEA};"
+            f"white-space:pre-wrap'>" + (f"<b style='color:{TINTA}'>{numerada_desde + i}.</b> " if numerada_desde is not None else "")
+            + f"{E_(x)}</div>" for i, x in enumerate(items)))
 
     def pre(self, t: str):
         if str(t).strip():
             self.t += [str(t).rstrip(), ""]
-            self.h.append("<div style='white-space:pre-wrap;background:#f6f6f4;border-radius:8px;padding:12px;margin:8px 0;"
-                          f"font-size:15px'>{html.escape(str(t).rstrip())}</div>")
+            self.h.append(f"<div style='white-space:pre-wrap;background:{CARTA};border:1px solid {LINEA};border-radius:10px;"
+                          f"padding:12px 14px;margin:8px 0;font-size:15px;line-height:1.5'>{E_(str(t).rstrip())}</div>")
+
+    def aviso_grande(self, t: str, nivel: str = "mal"):
+        """Una franja que no se puede pasar por alto (un aviso grave que bloquea)."""
+        fondo, borde, color = SUAVE[nivel]
+        self.t.append(("⛔ " if nivel == "mal" else "⚠️ ") + t)
+        self.h.append(_tabla(f"<tr><td style='padding:12px 14px;font-size:16px;font-weight:800;color:{color}'>"
+                             f"{'⛔' if nivel == 'mal' else '⚠️'} {E_(t)}</td></tr>",
+                             f"margin:10px 0;background:{fondo};border:2px solid {borde};border-radius:12px"))
 
     def texto(self) -> str:
         return "\n".join(self.t).strip()
 
     def html(self) -> str:
         return "".join(self.h)
+
+
+# ── piezas visuales ─────────────────────────────────────────────────────────────────────────────────────────────────
+def _fichas(fichas: list) -> str:
+    """Cifras grandes en fichas que se recolocan solas en el móvil: [(valor, etiqueta, estado)] con estado
+    «mal» (rojo, bloquea), «ojo» (ámbar), «bien» (verde) o «»."""
+    out = []
+    for valor, etiqueta, estado in fichas:
+        fondo, borde, color = SUAVE.get(estado, SUAVE[""])
+        out.append(f"<div style='display:inline-block;vertical-align:top;width:82px;margin:0 6px 8px 0;padding:10px 5px;"
+                   f"border-radius:12px;background:{fondo};border:2px solid {borde};text-align:center'>"
+                   f"<div style='font-size:26px;font-weight:800;line-height:1.1;color:{color}'>{E_(str(valor))}</div>"
+                   f"<div style='font-size:13px;font-weight:700;color:{color};margin-top:4px'>{E_(etiqueta)}</div></div>")
+    return f"<div style='margin:2px 0 8px'>{''.join(out)}</div>"
+
+
+def _corte_movil(t: str, n: int | None = None) -> str:
+    """Lo que se ve del título en el inicio de YouTube en el móvil (el mismo corte que hyt_texto.titulo)."""
+    n = n or int(getattr(_cargar("hyt_texto"), "MOVIL", 40))
+    t = str(t or "").strip()
+    return t if len(t) <= n else (t[:n].rsplit(" ", 1)[0] or t[:n]) + "…"
+
+
+def _mmss(minutos) -> str:
+    try:
+        s = int(round(float(minutos) * 60))
+    except (TypeError, ValueError):
+        return ""
+    return f"{s // 60}:{s % 60:02d}" if s else ""
+
+
+def _vista_previa(canal: str, titulo: str, texto_mini: str, minutos=None, promesa: str = "", ancho: int = 320,
+                  movil: str = "", fondo: str = "#7c2d12") -> str:
+    """Cómo se vería en el inicio de YouTube: una miniatura 16:9 hecha con HTML (el texto de la miniatura en grande y la
+    duración) y debajo el título cortado como en el móvil, el canal y la promesa."""
+    alto = round(ancho * 9 / 16)
+    visto = movil or _corte_movil(titulo)
+    mini = E_(texto_mini or "(sin texto)")
+    letra = 34 if len(texto_mini or "") <= 12 else 26 if len(texto_mini or "") <= 22 else 20
+    dur = _mmss(minutos)
+    caja = (f"<tr><td height='{alto}' bgcolor='#111827' style='height:{alto}px;background:#111827;background-image:linear-gradient(135deg,#0b1020 0%,{fondo} 100%);"
+            f"border-radius:12px;text-align:center;vertical-align:middle;padding:0 14px'>"
+            f"<div style='font-size:{letra}px;font-weight:900;line-height:1.05;color:#fde047;text-transform:uppercase;"
+            f"letter-spacing:-0.5px'>{mini}</div>"
+            + (f"<div style='text-align:right;margin-top:-4px'><span style='display:inline-block;margin-top:{max(alto // 2 - 40, 8)}px;"
+               f"padding:1px 6px;border-radius:4px;background:#000000;color:#ffffff;font-size:12px;font-weight:700'>{dur}</span></div>"
+               if dur else "") + "</td></tr>")
+    inicial = E_((canal or "?")[:1].upper())
+    pie = (f"<tr><td style='padding:10px 0 0'>" + _tabla(
+        f"<tr><td width='40' valign='top' style='width:40px;vertical-align:top'><div style='width:32px;height:32px;line-height:32px;"
+        f"border-radius:16px;background:{fondo};color:#ffffff;text-align:center;font-weight:800;font-size:15px'>{inicial}</div></td>"
+        f"<td valign='top' style='vertical-align:top'><div style='font-size:16px;font-weight:700;line-height:1.3;color:{TINTA}'>{E_(visto)}</div>"
+        f"<div style='font-size:13px;color:{TINTA2};margin-top:2px'>{E_(canal)}{' · ' + E_(dur) if dur else ''}</div></td></tr>")
+        + "</td></tr>")
+    extra = ""
+    if visto != str(titulo or "").strip():
+        extra += (f"<div style='font-size:13px;color:{TINTA2};margin-top:6px'>Título completo ({len(str(titulo))} caracteres): "
+                  f"{E_(titulo)}</div>")
+    if promesa:
+        extra += f"<div style='font-size:14px;color:{TINTA};margin-top:6px'><b>Promesa:</b> {E_(promesa)}</div>"
+    return _tabla(caja + pie, f"max-width:{ancho}px;margin:6px 0 14px", ancho="100%") + extra
+
+
+def _tarjeta(contenido: str, borde: str = LINEA, izquierda: str = "", fondo: str = CARTA, margen: str = "0 0 12px") -> str:
+    return _tabla(f"<tr><td style='padding:12px 14px'>{contenido}</td></tr>",
+                  f"margin:{margen};background:{fondo};border:1px solid {borde};border-radius:12px"
+                  + (f";border-left:6px solid {izquierda}" if izquierda else ""))
+
+
+def _avisos(doc: Doc, avisos: list) -> None:
+    """Avisos con su color e icono: los graves en rojo (bloquean), los demás en ámbar."""
+    lineas, h = [], []
+    avisos = sorted(avisos, key=lambda a: not (isinstance(a, dict) and a.get("grave")))   # los graves, primero
+    for a in avisos:
+        grave = bool(a.get("grave")) if isinstance(a, dict) else False
+        t = str(a.get("texto", "")) if isinstance(a, dict) else str(a)
+        fondo, borde, color = SUAVE["mal" if grave else "ojo"]
+        lineas.append(("⛔ " if grave else "⚠️ ") + t)
+        h.append(_tabla(f"<tr><td width='34' valign='top' style='width:34px;padding:10px 0 10px 12px;font-size:18px;vertical-align:top'>"
+                        f"{'⛔' if grave else '⚠️'}</td><td style='padding:10px 12px 10px 4px;font-size:15px;color:{color}'>"
+                        f"<b>{'Grave' if grave else 'Aviso'}:</b> {E_(t)}</td></tr>",
+                        f"margin:0 0 8px;background:{fondo};border:1px solid {borde};border-radius:10px"))
+    if not avisos:
+        lineas.append("Sin avisos.")
+        h.append(_tarjeta(f"<span style='color:{SUAVE['bien'][2]};font-weight:700'>✓ Sin avisos.</span>", SUAVE["bien"][1], fondo=SUAVE["bien"][0]))
+    doc.crudo("".join(h), ["- " + l for l in lineas])
+
+
+def _cambios_editor(doc: Doc, cambios: list) -> None:
+    """Los cambios que propone el editor jefe (cierre.json), frase por frase, como «antes → después»."""
+    h, t = [], []
+    for c in cambios:
+        if not isinstance(c, dict):
+            continue
+        bloque, antes, despues, motivo = (str(c.get(k) or "") for k in ("bloque", "frase", "quedaria", "motivo"))
+        t.append(f"- [{bloque}] «{antes}» → «{despues}»" + (f" ({motivo})" if motivo else ""))
+        malo, bueno = SUAVE["mal"], SUAVE["bien"]
+        h.append(_tarjeta(
+            (_chip(_nombre_bloque(bloque), "#ede9fe", "#3b0764") if bloque else "")
+            + (f"<div style='font-size:14px;color:{TINTA2};margin:0 0 8px'>{E_(motivo)}</div>" if motivo else "")
+            + f"<div style='padding:8px 10px;border-radius:8px;background:{malo[0]};color:{malo[2]};font-size:15px'>"
+              f"<b>Antes:</b> <span style='text-decoration:line-through'>{E_(antes)}</span></div>"
+            + f"<div style='text-align:center;font-size:18px;font-weight:800;color:{TINTA};line-height:1.4'>↓</div>"
+            + f"<div style='padding:8px 10px;border-radius:8px;background:{bueno[0]};color:{bueno[2]};font-size:15px'>"
+              f"<b>Después:</b> {E_(despues or '(quitarla)')}</div>"))
+    doc.crudo("".join(h), t)
+
+
+def _estado_dato(x: dict) -> str:
+    return x.get("estado", "pendiente") + (f" → {x['valor']}" if x.get("valor") else "")
+
+
+def _datos_lineas(datos: list, solo_pendientes: bool = False) -> list:
+    out = []
+    for x in datos or []:
+        if not isinstance(x, dict) or (solo_pendientes and x.get("estado", "pendiente") != "pendiente"):
+            continue
+        out.append(f"{x.get('dato', '')} [{_estado_dato(x)}]" + (f"\nFrase: {x['frase']}" if x.get("frase") else "")
+                   + (f"\nFuente: {x['fuente']}" if x.get("fuente") else ""))
+    return out
+
+
+def _datos_tabla(doc: Doc, datos: list, solo_pendientes: bool = False) -> None:
+    """Los datos en una tabla (dato y su estado, frase, fuente; la fuente con enlace si es una URL)."""
+    datos = [x for x in datos or [] if isinstance(x, dict) and not (solo_pendientes and x.get("estado", "pendiente") != "pendiente")]
+    if not datos:
+        doc.lista(["Ninguno."])
+        return
+    th = f"padding:8px 8px;text-align:left;font-size:13px;font-weight:800;color:{TINTA};background:#e6dfd1"
+    filas = [f"<tr><th style='{th}'>Dato</th><th style='{th}'>Frase</th><th style='{th}'>Fuente</th></tr>"]
+    for x in datos:
+        estado = x.get("estado", "pendiente")
+        nivel = {"pendiente": "ojo", "verificado": "bien", "corregido": "bien", "eliminado": "mal"}.get(estado, "")
+        f = str(x.get("fuente") or "")
+        fuente = _enlace(f, _dominio(f)) if _es_url(f) else E_(f or "—")
+        td = f"padding:8px;vertical-align:top;border-top:1px solid {LINEA};font-size:14px;line-height:1.4;color:{TINTA}"
+        filas.append(f"<tr><td style='{td}'><b>{E_(str(x.get('dato', '')))}</b><br>"
+                     + _chip(_estado_dato(x), SUAVE[nivel][0], SUAVE[nivel][2], SUAVE[nivel][1])
+                     + f"</td><td style='{td}'>{E_(str(x.get('frase') or '—'))}</td><td style='{td};word-break:break-word'>{fuente}</td></tr>")
+    doc.crudo(_tabla("".join(filas), f"margin:4px 0 12px;background:{CARTA};border:1px solid {LINEA};border-radius:10px;overflow:hidden"),
+              ["- " + l for l in _datos_lineas(datos)])
+
+
+# ── el guion por bloques ────────────────────────────────────────────────────────────────────────────────────────────
+NOMBRES_BLOQUE = {"intro": "Intro", "conexion": "Conexión", "cierre": "Cierre"}
+
+
+def _nombre_bloque(b: str) -> str:
+    b = str(b or "").strip()
+    if b in NOMBRES_BLOQUE:
+        return NOMBRES_BLOQUE[b]
+    return re.sub(r"-(\d+)$", r" \1", b).replace("-", " ").capitalize() or "Guion"
+
+
+def _frases_por_bloque(d: Path) -> list:
+    """[(bloque, [(n, frase)])]: del guion numerado tal como se presentó, o numerando guion.md."""
+    numerado = _lee(d / "guion-numerado.md")
+    out: list = []
+    if numerado.strip():
+        for l in numerado.splitlines():
+            m = re.match(r"^##\s+(.+?)\s*$", l)
+            n = re.match(r"^\s*(\d+)\.\s+(.*\S)", l)
+            if m:
+                out.append((_cargar("hyt_texto").plano(m.group(1)).replace(" ", "-"), []))
+            elif n:
+                if not out:
+                    out.append(("", []))
+                out[-1][1].append((int(n.group(1)), n.group(2)))
+        if any(fs for _, fs in out):
+            return out
+    for n, bloque, frase in _cargar("hyt_texto").numerar(_lee(d / "guion.md")):
+        if not out or out[-1][0] != bloque:
+            out.append((bloque, []))
+        out[-1][1].append((n, frase))
+    return out
+
+
+def _presupuestos(d: Path, slug: str) -> dict:
+    """Palabras presupuestadas por bloque (escaleta.json); la intro, el máximo del canal (75 por defecto)."""
+    esc = _json(d / "escaleta.json") or {}
+    pres = {str(b.get("id")): int(b.get("palabras") or 0) for b in esc.get("bloques") or [] if isinstance(b, dict) and b.get("palabras")}
+    try:
+        tope = int(_cargar("hyt_reglas").reglas(C.leer(slug)).get("intro_max_palabras") or 75)
+    except Exception:   # noqa: BLE001
+        tope = 75
+    pres["intro"] = tope
+    return pres
+
+
+def _barra(escritas: int, presupuesto: int, estado: str = "") -> tuple:
+    """(html de la barra, estado): verde si está cerca de lo presupuestado, ámbar si se queda corta, rojo si se pasa
+    (o el `estado` que se le dé)."""
+    r = escritas / presupuesto if presupuesto else 0
+    estado = estado or ("mal" if r > 1.1 else "ojo" if r < 0.8 else "bien")
+    color = {"mal": ROJO, "ojo": "#d97706", "bien": "#16a34a"}[estado]
+    pct = max(2, min(100, round(r * 100)))
+    resto = f"<td style='font-size:0;line-height:0'>&nbsp;</td>" if pct < 100 else ""
+    return (_tabla(f"<tr><td width='{pct}%' bgcolor='{color}' style='width:{pct}%;height:10px;background:{color};border-radius:5px;"
+                   f"font-size:0;line-height:0'>&nbsp;</td>{resto}</tr>", f"margin:6px 0 10px;background:#ddd5c6;border-radius:5px"),
+            estado)
+
+
+def _guion(doc: Doc, d: Path, slug: str, acento: str = "#1e3a8a") -> None:
+    """Cada bloque en su tarjeta, con sus frases numeradas y una barra de palabras escritas frente a las presupuestadas.
+    Intro y cierre, destacados. Con `doc.limite`, el HTML solo lleva los primeros bloques (el texto, todos)."""
+    T = _cargar("hyt_texto")
+    pres = _presupuestos(d, slug)
+    bloques = _frases_por_bloque(d)
+    h, t = [], []
+    for i, (bloque, frases) in enumerate(bloques):
+        escritas = sum(len(T.palabras(f)) for _, f in frases)
+        p = pres.get(bloque, 0)
+        nombre = _nombre_bloque(bloque)
+        t += ["", f"## {nombre}" + (f" ({escritas}/{p} palabras)" if p else f" ({escritas} palabras)")] + [f"{n}. {f}" for n, f in frases]
+        if doc.limite is not None and i >= doc.limite:
+            doc.recortado = True
+            continue
+        barra, estado = _barra(escritas, p) if p else ("", "")
+        color_cifra = SUAVE.get(estado, SUAVE[""])[2]
+        destacado = bloque in ("intro", "cierre")
+        cifra = f"{escritas} / {p} palabras" if p else f"{escritas} palabras"
+        cab = _tabla(f"<tr><td style='font-size:17px;font-weight:800;color:{TINTA}'>{'★ ' if destacado else ''}{E_(nombre)}</td>"
+                     f"<td align='right' style='text-align:right;font-size:13px;font-weight:800;color:{color_cifra};white-space:nowrap'>"
+                     f"{E_(cifra)}</td></tr>")
+        filas = "".join(f"<div style='margin:0 0 7px;font-size:15px;line-height:1.5;color:{TINTA}'>"
+                        f"<span style='display:inline-block;min-width:28px;font-weight:800;color:{acento}'>{n}</span>{E_(f)}</div>"
+                        for n, f in frases)
+        h.append(_tarjeta(cab + (barra or "<div style='height:8px'></div>") + filas, LINEA, acento if destacado else "#b9ae9a",
+                          "#fff7e6" if destacado else CARTA))
+    if doc.recortado:
+        url = _panel_url()
+        quedan = len(bloques) - (doc.limite or 0)
+        h.append(_tarjeta(f"<b>Faltan {quedan} bloque(s) de este guion</b> para que el correo no se corte. "
+                          + (f"Está entero en el panel: {_enlace(url)}" if url else "Está entero en la pestaña YouTube del panel."),
+                          SUAVE["ojo"][1], fondo=SUAVE["ojo"][0]))
+    doc.crudo("".join(h), t + [""])
+
+
+def _panel_url() -> str:
+    return str((B.leer(B.home() / "yt.json", {}) or {}).get("panel_url") or "").strip()
 
 
 # ── el contenido de cada puerta ─────────────────────────────────────────────────────────────────────────────────────
@@ -300,18 +676,10 @@ def _miniatura(doc: Doc, m: dict | None, con_foto: bool = False) -> None:
               f"Reparto con el título: {m.get('reparto', '')}" if m.get("reparto") else "",
               f"Nota de quien la eligió: {m.get('nota_de_la_persona', '')}" if m.get("nota_de_la_persona") else "",
               f"Foto que hay que pedir: {pres.get('foto_a_pedir', '')}" if con_foto and pres.get("foto_a_pedir") else ""]
-    doc.lista(lineas)
-
-
-def _datos_lineas(datos: list, solo_pendientes: bool = False) -> list:
-    out = []
-    for x in datos or []:
-        if not isinstance(x, dict) or (solo_pendientes and x.get("estado", "pendiente") != "pendiente"):
-            continue
-        estado = x.get("estado", "pendiente") + (f" → {x['valor']}" if x.get("valor") else "")
-        out.append(f"{x.get('dato', '')} [{estado}]" + (f"\nFrase: {x['frase']}" if x.get("frase") else "")
-                   + (f"\nFuente: {x['fuente']}" if x.get("fuente") else ""))
-    return out
+    lineas = [l for l in lineas if l]
+    filas = "".join(f"<div style='margin:0 0 5px;font-size:15px'><b>{E_(l.split(':', 1)[0])}:</b>{E_(l.split(':', 1)[1])}</div>"
+                    for l in lineas)
+    doc.crudo(_tarjeta(filas) if filas else "", ["- " + l for l in lineas])
 
 
 def _cambios(d: Path) -> dict | None:
@@ -325,42 +693,100 @@ def _cambios(d: Path) -> dict | None:
     return c if c["nuevas"] or c["quitadas"] else None
 
 
+def _medidas(d: Path, paq: dict) -> dict:
+    """Las cifras de un guion: palabras, minutos, avisos (graves y no), nota, datos por verificar y externos,
+    veredicto y cambios del editor jefe."""
+    g, rev = paq.get("guion") or {}, paq.get("revision") or {}
+    avisos = [a for a in rev.get("avisos") or [] if isinstance(a, dict)]
+    graves = int(rev.get("graves") or sum(1 for a in avisos if a.get("grave")))
+    datos = [x for x in (_json(d / "datos.json") or {}).get("datos") or paq.get("datos") or [] if isinstance(x, dict)]
+    cierre = _json(d / "cierre.json") or {}
+    palabras = g.get("palabras")
+    if not palabras and (d / "guion.md").exists():
+        palabras = _cargar("hyt_texto").medidas(_lee(d / "guion.md"))["palabras"]
+    return {"palabras": palabras or 0, "minutos": g.get("minutos") or 0, "graves": graves, "avisos": max(len(avisos) - graves, 0),
+            "lista_avisos": avisos, "nota": rev.get("nota", "—"), "datos": datos,
+            "pendientes": sum(1 for x in datos if x.get("estado", "pendiente") == "pendiente"),
+            "externos": sum(1 for x in datos if _externo(x)),
+            "veredicto": cierre.get("veredicto") or (paq.get("editor") or {}).get("veredicto") or "—",
+            "cambios": [c for c in cierre.get("cambios") or [] if isinstance(c, dict)],
+            "notas": [str(n) for n in (cierre.get("notas") or (paq.get("editor") or {}).get("notas") or [])]}
+
+
+def _min(m) -> str:
+    try:
+        return f"{float(m):.1f}".replace(".", ",").replace(",0", "")
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _c_revision(p: dict, doc: Doc) -> None:
     d = _carpeta(p)
     paq = (_json(d / "paquete.json") if d else None) or {}
     if not d or not paq:
         doc.pre(p.get("texto", ""))
         return
+    m = _medidas(d, paq)
+    doc.crudo(_fichas([(m["palabras"], "palabras", ""), (_min(m["minutos"]), "minutos", ""),
+                       (m["nota"], "nota", "mal" if m["graves"] else ""),
+                       (m["graves"], "avisos graves", "mal" if m["graves"] else "bien"),
+                       (m["avisos"], "avisos", "ojo" if m["avisos"] else "bien"),
+                       (m["pendientes"], "datos por verificar", "ojo" if m["pendientes"] else "bien")]),
+              f"{m['palabras']} palabras · {_min(m['minutos'])} min · nota {m['nota']} · {m['graves']} aviso(s) grave(s) · "
+              f"{m['avisos']} aviso(s) · {m['pendientes']} dato(s) por verificar")
     if int(p.get("ronda") or 0) or (d / ".estado").is_dir():
         c = _cambios(d)
         if c:
-            doc.titulo(f"Lo que ha cambiado desde la versión anterior ({c['pct']} % de las frases)")
+            doc.titulo(f"Lo que ha cambiado desde la versión anterior ({c['pct']} % de las frases)", "🔁")
             doc.lista([f"Frase {n}: {f}" for n, f in c["nuevas"][:40]]
                       + [f"Quitada: {f}" for f in c["quitadas"][:40] if not any(f == x for _, x in c["nuevas"])])
-    doc.titulo("Título")
-    doc.parrafo(paq.get("titulo") or "(sin título elegido)", fuerte=True)
-    if paq.get("promesa"):
-        doc.parrafo(f"Promesa: {paq['promesa']}")
-    doc.titulo("Miniatura")
+    doc.titulo("Título y miniatura", "▶")
+    mini = paq.get("miniatura") if isinstance(paq.get("miniatura"), dict) else {}
+    doc.crudo(_vista_previa(_nombre_canal(p["canal"]), paq.get("titulo") or "(sin título elegido)", mini.get("texto", ""),
+                            m["minutos"], paq.get("promesa", ""), fondo=TIPOS.get(p["tipo"], TIPOS["revision"])[1]),
+              ["Título: " + (paq.get("titulo") or "(sin título elegido)")] + ([f"Promesa: {paq['promesa']}"] if paq.get("promesa") else []))
     _miniatura(doc, paq.get("miniatura"))
-    g = paq.get("guion") or {}
-    doc.titulo("Guion" + (f" ({g.get('palabras')} palabras, unos {g.get('minutos')} min)" if g.get("palabras") else ""))
-    numerado = _lee(d / "guion-numerado.md") or _lee(d / "guion.md")
+    doc.titulo(f"Revisión por código: nota {m['nota']}", "🧭")
+    _avisos(doc, m["lista_avisos"])
+    if m["cambios"]:
+        doc.titulo(f"Cambios que propone el editor jefe ({len(m['cambios'])})", "✏️")
+        _cambios_editor(doc, m["cambios"])
+    if m["notas"] or m["veredicto"] != "—":
+        doc.titulo("Notas del editor" + (f" ({m['veredicto']})" if m["veredicto"] != "—" else ""), "🗒")
+        doc.lista(m["notas"])
+    doc.titulo("Guion" + (f" ({m['palabras']} palabras, unos {_min(m['minutos'])} min)" if m["palabras"] else ""), "📝")
     doc.parrafo("Cada frase lleva su número: para pedir un cambio puedes decir «frase 14: yo diría…».")
-    doc.pre(numerado)
-    doc.titulo("Descripción")
+    _guion(doc, d, p["canal"], TIPOS.get(p["tipo"], TIPOS["revision"])[1])
+    doc.titulo("Descripción", "📄")
     doc.pre(_lee(d / "descripcion.md") or "(sin descripción)")
-    rev = paq.get("revision") or {}
-    doc.titulo(f"Revisión por código: nota {rev.get('nota', '—')}")
-    doc.lista([("⛔ " if a.get("grave") else "⚠️ ") + str(a.get("texto", "")) for a in rev.get("avisos") or []] or ["Sin avisos."])
-    ed = paq.get("editor") or {}
-    if ed.get("notas") or ed.get("veredicto"):
-        doc.titulo("Notas del editor" + (f" ({ed['veredicto']})" if ed.get("veredicto") else ""))
-        doc.lista([str(n) for n in ed.get("notas") or []])
-    datos = (_json(d / "datos.json") or {}).get("datos") or paq.get("datos") or []
-    if datos:
-        doc.titulo(f"Datos ({len(datos)})")
-        doc.lista(_datos_lineas(datos))
+    if m["datos"]:
+        doc.titulo(f"Datos ({len(m['datos'])})", "🔎")
+        _datos_tabla(doc, m["datos"])
+
+
+def _tema_linea(x: dict) -> str:
+    return (f"[{x.get('pilar', '')}] {x.get('titulo', '')}" + (f"\n{x['resumen']}" if x.get("resumen") else "")
+            + (f"\nNota: {x['nota']}" if x.get("nota") not in (None, "") else "")
+            + (f" · «{x['frase']}»" if x.get("frase") else "")
+            + (f"\nParecido a: {x['parecido_a']}" if x.get("parecido_a") else ""))
+
+
+def _temas_tarjetas(doc: Doc, temas: list, desde: int, suplente: bool = False) -> None:
+    h = []
+    for i, x in enumerate(temas):
+        n = desde + i
+        num = (f"<div style='width:38px;height:38px;line-height:38px;border-radius:19px;text-align:center;font-size:18px;font-weight:900;"
+               f"background:{'#e2d9c8' if suplente else '#c2410c'};color:{TINTA if suplente else '#ffffff'}'>{n}</div>")
+        cuerpo = (_chip(x.get("pilar", "") or "sin pilar", "#ffedd5", "#7c2d12", "#f5b682")
+                  + (_chip(f"Nota {x['nota']}", "#f3efe7", TINTA, LINEA) if x.get("nota") not in (None, "") else "")
+                  + f"<div style='font-size:17px;font-weight:800;line-height:1.3;color:{TINTA};margin:2px 0 4px'>{E_(str(x.get('titulo', '')))}</div>"
+                  + (f"<div style='font-size:15px;color:{TINTA};margin:0 0 6px'>{E_(str(x['resumen']))}</div>" if x.get("resumen") else "")
+                  + (f"<div style='font-size:15px;font-style:italic;color:{TINTA2};margin:0 0 4px'>«{E_(str(x['frase']))}»</div>" if x.get("frase") else "")
+                  + (f"<div style='font-size:14px;font-weight:700;color:{SUAVE['ojo'][2]};background:{SUAVE['ojo'][0]};padding:6px 8px;"
+                     f"border-radius:8px;margin-top:6px'>⚠️ Parecido a: {E_(str(x['parecido_a']))}</div>" if x.get("parecido_a") else ""))
+        h.append(_tarjeta(_tabla(f"<tr><td width='50' valign='top' style='width:50px;vertical-align:top'>{num}</td>"
+                                 f"<td valign='top' style='vertical-align:top'>{cuerpo}</td></tr>"), LINEA, "" if suplente else "#f97316"))
+    doc.crudo("".join(h), [f"{desde + i}. {_tema_linea(x)}" for i, x in enumerate(temas)])
 
 
 def _c_temas(p: dict, doc: Doc) -> None:
@@ -370,21 +796,17 @@ def _c_temas(p: dict, doc: Doc) -> None:
     if not temas:
         doc.pre(p.get("texto", ""))
         return
-
-    def linea(x: dict) -> str:
-        return (f"[{x.get('pilar', '')}] {x.get('titulo', '')}" + (f"\n{x['resumen']}" if x.get("resumen") else "")
-                + (f"\nNota: {x['nota']}" if x.get("nota") not in (None, "") else "")
-                + (f" · «{x['frase']}»" if x.get("frase") else "")
-                + (f"\nParecido a: {x['parecido_a']}" if x.get("parecido_a") else ""))
-    doc.titulo(f"Temas propuestos ({len(temas)})")
-    doc.lista([linea(x) for x in temas], numerada_desde=1)
     supl = [x for x in t.get("suplentes") or [] if isinstance(x, dict)]
+    avisos = [str(a) for a in t.get("avisos") or []]
+    doc.crudo(_fichas([(len(temas), "propuestos", ""), (len(supl), "suplentes", ""), (len(avisos), "avisos", "ojo" if avisos else "bien")]))
+    doc.titulo(f"Temas propuestos ({len(temas)})", "💡")
+    _temas_tarjetas(doc, temas, 1)
     if supl:
-        doc.titulo("Suplentes")
-        doc.lista([linea(x) for x in supl], numerada_desde=len(temas) + 1)
-    if t.get("avisos"):
-        doc.titulo("Avisos")
-        doc.lista([str(a) for a in t["avisos"]])
+        doc.titulo("Suplentes", "🪑")
+        _temas_tarjetas(doc, supl, len(temas) + 1, suplente=True)
+    if avisos:
+        doc.titulo("Avisos", "⚠️")
+        _avisos(doc, avisos)
 
 
 def _c_titulo(p: dict, doc: Doc) -> dict:
@@ -396,21 +818,59 @@ def _c_titulo(p: dict, doc: Doc) -> dict:
         return {}
     rec = op.get("recomendacion") or {}
     brief = op.get("brief") or {}
+    minis = [x for x in op.get("miniaturas") or [] if isinstance(x, dict)]
+    canal = _nombre_canal(p["canal"])
+    try:
+        tope = int(_cargar("hyt_reglas").reglas(C.leer(p["canal"])).get("titulo_max") or 55)
+    except Exception:   # noqa: BLE001
+        tope = 55
     if brief.get("promesa"):
         doc.parrafo(f"Promesa del vídeo: {brief['promesa']}")
     if rec.get("titulo") or rec.get("miniatura"):
         doc.parrafo(f"Recomendación: título {rec.get('titulo', '—')} con la miniatura {rec.get('miniatura', '—')}"
                     + (f" (alternativa: título {rec['titulo_alternativo']})" if rec.get("titulo_alternativo") else ""), fuerte=True)
-    doc.titulo("Títulos")
-    doc.lista([f"{x.get('texto', '')}\n{x.get('caracteres', len(str(x.get('texto', ''))))} caracteres · en el móvil: «{x.get('movil', '')}»"
-               + ("\n" + "; ".join(str(a) for a in x["avisos"]) if x.get("avisos") else "") for x in tits],
-              numerada_desde=int(tits[0].get("n") or 1))
-    minis = [x for x in op.get("miniaturas") or [] if isinstance(x, dict)]
-    doc.titulo("Ideas de miniatura")
+        t_rec = next((x for x in tits if str(x.get("n")) == str(rec.get("titulo"))), None)
+        m_rec = next((x for x in minis if str(x.get("n")) == str(rec.get("miniatura"))), None)
+        if t_rec:
+            doc.crudo(_vista_previa(canal, t_rec.get("texto", ""), (m_rec or {}).get("texto", ""), None, "",
+                                    movil=t_rec.get("movil", ""), fondo="#9a3412"))
+    doc.titulo("Títulos", "🏷")
+    h = []
+    for x in tits:
+        texto = str(x.get("texto", ""))
+        n_car = int(x.get("caracteres") or len(texto))
+        es_rec = str(x.get("n")) == str(rec.get("titulo"))
+        movil_n = int(getattr(_cargar("hyt_texto"), "MOVIL", 40))   # entero en el móvil, verde; se corta, ámbar; largo, rojo
+        barra, _ = _barra(n_car, tope, "bien" if n_car <= movil_n else "ojo" if n_car < tope else "mal")
+        h.append(_tarjeta(
+            (_chip("★ Recomendado", SUAVE["bien"][0], SUAVE["bien"][2], SUAVE["bien"][1]) if es_rec else "")
+            + f"<div style='font-size:18px;font-weight:800;line-height:1.3;color:{TINTA}'><span style='color:#c2410c'>{E_(str(x.get('n', '')))}.</span> "
+              f"{E_(texto)}</div>"
+            + f"<div style='font-size:13px;font-weight:700;color:{TINTA2};margin-top:6px'>{n_car} de {tope} caracteres</div>" + barra
+            + f"<div style='font-size:14px;color:{TINTA}'><b>En el móvil:</b> «{E_(str(x.get('movil') or _corte_movil(texto)))}»</div>"
+            + "".join(f"<div style='margin-top:6px;font-size:14px;font-weight:700;color:{SUAVE['ojo'][2]}'>⚠️ {E_(str(a))}</div>"
+                      for a in x.get("avisos") or []),
+            SUAVE["bien"][1] if es_rec else LINEA, VERDE if es_rec else ""))
+    doc.crudo("".join(h), [f"{int(tits[0].get('n') or 1) + i}. {x.get('texto', '')}\n{x.get('caracteres', len(str(x.get('texto', ''))))} "
+                           f"caracteres · en el móvil: «{x.get('movil', '')}»" + ("\n" + "; ".join(str(a) for a in x["avisos"]) if x.get("avisos") else "")
+                           for i, x in enumerate(tits)])
+    doc.titulo("Ideas de miniatura", "🖼")
     for m in minis:
-        doc.parrafo(f"Miniatura {m.get('n', '?')}" + (f": {m['concepto']}" if m.get("concepto") else ""), fuerte=True)
+        es_rec = str(m.get("n")) == str(rec.get("miniatura"))
+        doc.parrafo(f"Miniatura {m.get('n', '?')}" + (f": {m['concepto']}" if m.get("concepto") else "") + (" ★ recomendada" if es_rec else ""), fuerte=True)
+        doc.crudo(_mini_sola(m.get("texto", "")))
         _miniatura(doc, m)
     return rec
+
+
+def _mini_sola(texto: str, ancho: int = 240) -> str:
+    """Solo la miniatura 16:9 (para comparar ideas de miniatura sin repetir el título)."""
+    alto = round(ancho * 9 / 16)
+    letra = 28 if len(texto or "") <= 12 else 22 if len(texto or "") <= 22 else 17
+    return _tabla(f"<tr><td height='{alto}' bgcolor='#111827' style='height:{alto}px;background:#111827;"
+                  f"background-image:linear-gradient(135deg,#0b1020 0%,#9a3412 100%);border-radius:10px;text-align:center;vertical-align:middle;padding:0 12px'>"
+                  f"<div style='font-size:{letra}px;font-weight:900;line-height:1.05;color:#fde047;text-transform:uppercase'>{E_(texto or '(sin texto)')}</div>"
+                  f"</td></tr>", f"max-width:{ancho}px;margin:4px 0 8px")
 
 
 def _c_voz(p: dict, doc: Doc) -> None:
@@ -420,13 +880,178 @@ def _c_voz(p: dict, doc: Doc) -> None:
 
 def _c_datos(p: dict, doc: Doc) -> None:
     PU = _cargar("hyt_puertas")
-    pendientes = _datos_lineas(PU.datos_de(p), solo_pendientes=True)
-    url = str((B.leer(B.home() / "yt.json", {}) or {}).get("panel_url") or "").strip()
+    datos = PU.datos_de(p)
+    pendientes = [x for x in datos if x.get("estado", "pendiente") == "pendiente"]
+    url = _panel_url()
+    doc.crudo(_fichas([(len(pendientes), "por verificar", "mal" if pendientes else "bien"), (len(datos), "datos en total", ""),
+                       (sum(1 for x in datos if _externo(x)), "con fuente externa", "")]))
     doc.parrafo(f"Hay {len(pendientes)} dato(s) por verificar, uno a uno: verificado, corregido o eliminado.", fuerte=True)
     doc.parrafo("Los datos no se verifican por correo: se hace " + (f"en el panel: {url}" if url else "en la pestaña YouTube del panel")
                 + ". Cuando no quede ninguno pendiente, allí mismo se da la puerta por verificada.")
-    doc.titulo("Datos pendientes")
-    doc.lista(pendientes or ["Ninguno."])
+    if url:
+        doc.crudo(_boton_web(url, "🔎 Verificar en el panel", "#0f766e"))
+    doc.titulo("Datos pendientes", "🔎")
+    _datos_tabla(doc, datos, solo_pendientes=True)
+
+
+# ── elegir entre dos versiones del mismo guion (A, propia; B, investigada) ──────────────────────────────────────────
+def _gemelos(p: dict) -> list:
+    """[{letra, version, encargo, carpeta}] de una puerta elegir-version."""
+    E = _cargar("hyt_encargos")
+    out = []
+    for g in p.get("gemelos") or []:
+        if isinstance(g, dict) and g.get("encargo") and g.get("letra"):
+            out.append({**g, "letra": str(g["letra"]).upper(), "carpeta": E.carpeta(p["canal"], g["encargo"])})
+    return out
+
+
+ICONO_FUENTE = {"youtube": "▶", "doc": "📄", "articulo": "📰", "noticia": "🗞"}
+
+
+def _investigacion(doc: Doc, d: Path) -> None:
+    inv = _json(d / "investigacion.json") or {}
+    fuentes = [f for f in inv.get("fuentes") or [] if isinstance(f, dict)]
+    huecos = [str(h) for h in inv.get("huecos_cubiertos") or [] if str(h).strip()]
+    hallazgos = inv.get("hallazgos") or []
+    sin_comprobar = sum(1 for f in fuentes if f.get("comprobada") is False)
+    doc.crudo(_fichas([(len(fuentes), "fuentes", ""), (len(huecos), "huecos cubiertos", "bien" if huecos else ""),
+                       (len(hallazgos), "hallazgos", "")]
+                      + ([(sin_comprobar, "fuentes sin comprobar", "ojo")] if sin_comprobar else [])))
+    if fuentes:
+        h, t = [], []
+        for f in fuentes:
+            url, tit = str(f.get("url") or ""), str(f.get("titulo") or f.get("url") or "")
+            meta = " · ".join(str(x) for x in (f.get("autor_o_canal"), f.get("fecha"), f.get("tipo")) if x)
+            dudosa = f.get("comprobada") is False
+            t.append(f"- [{f.get('id', '')}] {tit}" + (f" ({meta})" if meta else "") + (" [sin comprobar]" if dudosa else "")
+                     + (f"\n  {url}" if url else ""))
+            h.append(_tabla(f"<tr><td width='30' valign='top' style='width:30px;padding:9px 0 9px 10px;font-size:17px;vertical-align:top'>"
+                            f"{ICONO_FUENTE.get(str(f.get('tipo')), '🔗')}</td><td style='padding:9px 10px 9px 4px;font-size:15px;line-height:1.4'>"
+                            + (_enlace(url, tit) if _es_url(url) else f"<b>{E_(tit)}</b>")
+                            + (f"<div style='font-size:13px;color:{TINTA2};margin-top:2px'>{E_(meta)}</div>" if meta else "")
+                            + (_chip("sin comprobar", *(SUAVE["ojo"][i] for i in (0, 2, 1))) if dudosa else "") + "</td></tr>",
+                            f"margin:0 0 8px;background:{CARTA};border:1px solid {LINEA};border-radius:10px"))
+        doc.parrafo("Fuentes consultadas:", fuerte=True)
+        doc.crudo("".join(h), t)
+    if huecos:
+        doc.parrafo("Huecos que cubre:", fuerte=True)
+        doc.crudo("".join(f"<div style='margin:0 0 6px;font-size:15px;color:{TINTA}'><b style='color:{VERDE}'>✓</b> {E_(x)}</div>" for x in huecos),
+                  ["✓ " + x for x in huecos])
+    sin = [str(h) for h in inv.get("huecos_sin_cubrir") or [] if str(h).strip()]
+    if sin:
+        doc.parrafo("Huecos que sigue sin cubrir:", fuerte=True)
+        doc.crudo("".join(f"<div style='margin:0 0 6px;font-size:15px;color:{SUAVE['ojo'][2]}'><b>○</b> {E_(x)}</div>" for x in sin),
+                  ["○ " + x for x in sin])
+    nombres = {str(f.get("id")): str(f.get("autor_o_canal") or f.get("titulo") or f.get("id")) for f in fuentes}
+    urls = {str(f.get("id")): str(f.get("url") or "") for f in fuentes}
+    h, t = [], []
+    for x in hallazgos[:6]:
+        if isinstance(x, dict):
+            dicho = str(x.get("dicho") or x.get("texto") or x.get("cita") or x.get("dato") or "")
+            fu = str(x.get("fuente") or "")
+            if not dicho:
+                continue
+            if _es_url(x.get("url")) and not _es_url(urls.get(fu)):
+                urls[fu] = str(x["url"])
+            t.append(dicho + (f" [{nombres.get(fu, fu)}]" if fu else "") + (" (una sola fuente)" if x.get("una_fuente") else "")
+                     + (" (sin comprobar)" if x.get("comprobado") is False else ""))
+            h.append(_tarjeta(f"<div style='font-size:15px;color:{TINTA}'>{E_(dicho)}</div>"
+                              + (f"<div style='font-size:13px;color:{TINTA2};margin-top:4px'>"
+                                 + (_enlace(urls[fu], nombres.get(fu, fu)) if _es_url(urls.get(fu)) else E_(nombres.get(fu, fu)))
+                                 + (" · " + E_(str(x["aporta"])) if x.get("aporta") else "") + "</div>" if fu else "")
+                              + (_chip("una sola fuente", *(SUAVE["ojo"][i] for i in (0, 2, 1))) if x.get("una_fuente") else "")
+                              + (_chip("cita sin comprobar", *(SUAVE["ojo"][i] for i in (0, 2, 1))) if x.get("comprobado") is False else ""),
+                              margen="0 0 8px"))
+        elif str(x).strip():
+            t.append(str(x))
+            h.append(_tarjeta(E_(str(x)), margen="0 0 8px"))
+    if t:
+        doc.parrafo("Hallazgos" + (f" (los {len(t)} primeros de {len(hallazgos)})" if len(hallazgos) > len(t) else "") + ":", fuerte=True)
+        doc.crudo("".join(h), ["- " + x for x in t])
+    dudosos = [x for x in inv.get("dudosos") or [] if isinstance(x, dict)]
+    if dudosos:
+        doc.parrafo(f"Dudosos: las fuentes no coinciden ({len(dudosos)}); lo decide una persona.", fuerte=True)
+        for x in dudosos[:5]:
+            vs = [v for v in x.get("versiones") or [] if isinstance(v, dict)]
+            doc.crudo(_tarjeta(f"<div style='font-weight:800;color:{SUAVE['ojo'][2]}'>⚠️ {E_(str(x.get('dato', '')))}</div>"
+                               + "".join(f"<div style='font-size:14px;margin-top:4px'>{E_(str(v.get('valor', '')))} · "
+                                         + (_enlace(v['fuente'], _dominio(v['fuente'])) if _es_url(v.get("fuente")) else E_(str(v.get("fuente", ""))))
+                                         + "</div>" for v in vs), SUAVE["ojo"][1], fondo=SUAVE["ojo"][0], margen="0 0 8px"),
+                      [f"⚠️ {x.get('dato', '')}: " + "; ".join(f"{v.get('valor', '')} ({v.get('fuente', '')})" for v in vs)])
+
+
+def _c_version(p: dict, doc: Doc, cola: Doc) -> None:
+    """Comparación A frente a B: tabla con las cifras, lo que aportó la investigación y, en `cola` (tras los botones),
+    los dos guiones por bloques."""
+    gem = _gemelos(p)
+    if len(gem) < 2:
+        doc.pre(p.get("texto", ""))
+        return
+    canal = _nombre_canal(p["canal"])
+    datos = [(g, (_json(g["carpeta"] / "paquete.json") or {})) for g in gem]
+    med = [(g, paq, _medidas(g["carpeta"], paq)) for g, paq in datos]
+    doc.parrafo("Hay dos versiones del mismo vídeo: " + " y ".join(
+        f"{g['letra']} ({g.get('version', '')})" for g in gem) + ". Elige con cuál se sigue; la otra se descarta.", fuerte=True)
+    # la vista previa: una si las dos llevan el mismo título y miniatura; si no, una por versión
+    vistas = []
+    for g, paq, m in med:
+        mini = paq.get("miniatura") if isinstance(paq.get("miniatura"), dict) else {}
+        vistas.append((g, paq.get("titulo") or "", mini.get("texto", ""), m["minutos"], paq.get("promesa", "")))
+    if len({(v[1], v[2]) for v in vistas}) == 1:
+        doc.crudo(_vista_previa(canal, vistas[0][1], vistas[0][2], vistas[0][3], vistas[0][4], fondo="#86198f"),
+                  [f"Título: {vistas[0][1]}"] + ([f"Promesa: {vistas[0][4]}"] if vistas[0][4] else []))
+    else:
+        doc.crudo("".join(f"<div style='display:inline-block;vertical-align:top;width:100%;max-width:280px;margin:0 12px 6px 0'>"
+                          f"<div style='font-weight:800;margin-bottom:4px'>Versión {E_(g['letra'])}</div>"
+                          + _vista_previa(canal, t, mt, mi, pr, ancho=280, fondo="#86198f") + "</div>" for g, t, mt, mi, pr in vistas),
+                  [f"Título {g['letra']}: {t}" for g, t, _, _, _ in vistas])
+    # la tabla A frente a B
+    filas = [("Palabras", lambda m: (m["palabras"], "")), ("Minutos", lambda m: (_min(m["minutos"]), "")),
+             ("Nota de la revisión", lambda m: (m["nota"], "")),
+             ("Avisos graves", lambda m: (m["graves"], "mal" if m["graves"] else "bien")),
+             ("Avisos", lambda m: (m["avisos"], "ojo" if m["avisos"] else "bien")),
+             ("Datos por verificar", lambda m: (f"{m['pendientes']} ({m['externos']} externos)" if m["externos"] else m["pendientes"],
+                                                "ojo" if m["pendientes"] else "bien")),
+             ("Veredicto del editor jefe", lambda m: (m["veredicto"], "bien" if m["veredicto"] == "APROBADO" else "ojo" if m["veredicto"] != "—" else "")),
+             ("Cambios del editor jefe", lambda m: (len(m["cambios"]), "ojo" if m["cambios"] else "bien"))]
+    colores = ["#1e40af", "#86198f", "#0f766e", "#9a3412"]
+    th = "padding:10px 8px;font-size:15px;font-weight:900;color:#ffffff;text-align:center"
+    cab = (f"<tr><th style='padding:10px 8px;font-size:13px;text-align:left;color:{TINTA};background:#e6dfd1'>&nbsp;</th>"
+           + "".join(f"<th bgcolor='{colores[i % 4]}' style='{th};background:{colores[i % 4]}'>{E_(g['letra'])}<div style='font-size:12px;font-weight:700'>"
+                     f"{E_(g.get('version', ''))}</div></th>" for i, (g, _, _) in enumerate(med)) + "</tr>")
+    cuerpo, texto = [], ["", "A FRENTE A B", ""]
+    for etiqueta, f in filas:
+        celdas = []
+        for g, _, m in med:
+            valor, estado = f(m)
+            fondo, _, color = SUAVE.get(estado, SUAVE[""])
+            celdas.append(f"<td style='padding:9px 8px;text-align:center;border-top:1px solid {LINEA};background:{fondo};color:{color};"
+                          f"font-size:17px;font-weight:800'>{E_(str(valor))}</td>")
+        cuerpo.append(f"<tr><td style='padding:9px 8px;border-top:1px solid {LINEA};font-size:14px;font-weight:700;color:{TINTA}'>"
+                      f"{E_(etiqueta)}</td>{''.join(celdas)}</tr>")
+        texto.append(f"{etiqueta}: " + " · ".join(f"{g['letra']} {f(m)[0]}" for g, _, m in med))
+    doc.titulo("A frente a B", "⚖️")
+    doc.crudo(_tabla(cab + "".join(cuerpo), f"margin:4px 0 10px;background:{CARTA};border:1px solid {LINEA};border-radius:12px;overflow:hidden"),
+              texto[3:])
+    for g, _, m in med:
+        if m["graves"]:
+            doc.aviso_grande(f"La versión {g['letra']} tiene {m['graves']} aviso(s) grave(s): no se puede elegir hasta rehacerla.")
+    inv = next((g for g in gem if (g["carpeta"] / "investigacion.json").exists()), None)
+    if inv:
+        doc.titulo(f"Qué aportó la investigación (versión {inv['letra']})", "🔬")
+        _investigacion(doc, inv["carpeta"])
+        externos = [x for x in next(m for g, _, m in med if g is inv)["datos"] if _externo(x)]
+        if externos:
+            doc.parrafo(f"Datos que vienen de fuera ({len(externos)}): se verifican en el panel.", fuerte=True)
+            _datos_tabla(doc, externos)
+    for g, paq, m in med:
+        cola.titulo(f"Versión {g['letra']} · {g.get('version', '')}: {m['palabras']} palabras, unos {_min(m['minutos'])} min", "📝")
+        if m["lista_avisos"]:
+            _avisos(cola, m["lista_avisos"])
+        if m["cambios"]:
+            cola.parrafo(f"El editor jefe propone {len(m['cambios'])} cambio(s):", fuerte=True)
+            _cambios_editor(cola, m["cambios"][:5])
+        _guion(cola, g["carpeta"], p["canal"], "#1e40af" if g["letra"] == "A" else "#86198f")
 
 
 def palabra(tipo: str, verbo: str) -> str:
@@ -435,17 +1060,63 @@ def palabra(tipo: str, verbo: str) -> str:
             "rechazo": "NINGUNO" if elegir else "RECHAZAR", "deshacer": "DESHACER"}.get(verbo, "RECHAZAR")
 
 
+def opciones_correo(p: dict) -> list:
+    """Las opciones de la puerta tal como salen en el correo, cada una con su `clave` (la de su código). Casi siempre
+    la clave es el verbo; cuando dos opciones comparten verbo (elegir A y elegir B: «algunas» con la letra como
+    texto), la clave es «verbo:letra» y el código ya lleva la letra: un solo clic decide."""
+    PU = _cargar("hyt_puertas")
+    gem = {str(g.get("version") or "").lower(): str(g.get("letra") or "").upper() for g in p.get("gemelos") or [] if isinstance(g, dict)}
+    out, vistas = [], set()
+
+    def poner(o: dict, letra: str = ""):
+        clave = f"{o['verbo']}:{letra}" if letra else o["verbo"]
+        if clave not in vistas:
+            vistas.add(clave)
+            out.append({**o, "clave": clave, "letra": letra})
+
+    for o in PU.opciones_vigentes(p):
+        letra = next((str(o[k]) for k in ("letra", "valor", "version") if isinstance(o.get(k), str) and o.get(k)), "")
+        letra = gem.get(letra.lower(), letra).upper()
+        valores = [str(v) for v in o.get("valores") or [] if str(v).strip()] if isinstance(o.get("valores"), list) else []
+        if o["verbo"] == "algunas" and not letra and (valores or p.get("tipo") == "elegir-version"):
+            # una opción por valor (o por gemelo): «Elegir A», «Elegir B»…; solo las letras que la puerta tiene
+            letras = [str(g.get("letra")).upper() for g in p.get("gemelos") or [] if isinstance(g, dict) and g.get("letra")]
+            for v in [gem.get(v.lower(), v).upper() for v in valores] or letras:
+                if not letras or v in letras:
+                    poner({**o, "etiqueta": f"✅ Elegir {v}"}, v)
+            continue
+        poner(o, letra)
+    return out
+
+
+def _ayuda_boton(p: dict, o: dict) -> str:
+    v, tipo = o["verbo"], p["tipo"]
+    if tipo == "elegir-version" and o.get("letra"):
+        g = next((g for g in p.get("gemelos") or [] if str(g.get("letra", "")).upper() == o["letra"]), {})
+        return f"Se sigue con la versión {o['letra']}" + (f" ({g['version']})" if g.get("version") else "") + "; la otra se descarta."
+    return {"acepto": "Da el visto bueno: pasa al siguiente paso al momento.",
+            "algunas": {"elegir-temas": "Abre un correo: escribe los números de los temas y envíalo.",
+                        "elegir-titulo": "Ya lleva la pareja recomendada: basta con enviarlo (o cambia los números)."}.get(tipo, "Abre un correo ya escrito: envíalo."),
+            "cambios": "Pide otra propuesta." if tipo in ELEGIR else "Escribe qué cambiar; puedes señalar las frases por su número.",
+            "rechazo": ("Descarta la propuesta" if tipo in ELEGIR else "Descarta las dos versiones" if tipo == "elegir-version"
+                        else "Descarta el vídeo") + "; si quieres, di por qué.",
+            }.get(v, "")
+
+
 def _botones(p: dict, cod: dict, rec: dict | None = None) -> tuple:
     """(botones HTML, líneas de texto, ayuda) de una puerta, según su tipo y sus opciones vigentes."""
-    PU = _cargar("hyt_puertas")
     tipo = p["tipo"]
     if tipo == "datos":
         return [], [], ""
     botones, lineas = [], []
-    for o in PU.opciones_vigentes(p):
-        v, pal = o["verbo"], palabra(tipo, o["verbo"])
+    for o in opciones_correo(p):
+        v, clave, pal = o["verbo"], o["clave"], palabra(tipo, o["verbo"])
+        if clave not in cod:
+            continue
         extra = ""
-        if v == "cambios" and tipo not in ELEGIR:
+        if o.get("letra"):
+            extra = f": {o['letra']}"
+        elif v == "cambios" and tipo not in ELEGIR:
             extra = f": {AYUDA_REHACER}"
         elif v == "rechazo":
             extra = f": {AYUDA_MOTIVO}"
@@ -453,12 +1124,12 @@ def _botones(p: dict, cod: dict, rec: dict | None = None) -> tuple:
             extra = f": {AYUDA_TEMAS}"
         elif v == "algunas" and tipo == "elegir-titulo":
             extra = f"\ntitulo: {(rec or {}).get('titulo') or 1}\nminiatura: {(rec or {}).get('miniatura') or 1}"
-        color = {"acepto": "#1d7a46", "algunas": "#1d7a46", "rechazo": "#8a2c12"}.get(v, "#126a8a")
-        botones.append(_boton(pal, cod[v], o["etiqueta"], extra, color))
-        lineas.append(f"  {pal} {cod[v]}" + (": …" if extra.startswith(":") else ""))
+        botones.append(_boton(pal, cod[clave], o["etiqueta"], extra, ayuda=_ayuda_boton(p, o)))
+        lineas.append(f"  {pal} {cod[clave]}" + (f": {o['letra']}" if o.get("letra") else ": …" if extra.startswith(":") else ""))
     ayuda = {"elegir-temas": "Para elegir, escribe los números, por ejemplo: 1, 4, 7 (los suplentes siguen la numeración). «todos» elige todos los propuestos.",
              "elegir-titulo": "El botón de elegir ya lleva la pareja recomendada: basta con enviarlo. Puedes cambiar los números, escribir un "
                               "título propio («titulo: …»), añadir «nota: …» para la miniatura y «destino: …» para el vídeo al que lleva el cierre.",
+             "elegir-version": "Cada botón de elegir ya lleva su versión: basta con enviarlo. Un texto libre no decide nada.",
              }.get(tipo, "Para pedir cambios, responde a este correo diciendo qué cambiar (o usa «Rehacer»). Un «ok» o un «gracias» no deciden nada."
                    if tipo in REVISAR else "")
     return botones, lineas, ayuda
@@ -467,10 +1138,11 @@ def _botones(p: dict, cod: dict, rec: dict | None = None) -> tuple:
 def _hash(p: dict) -> str:
     """Huella de lo que se decide: si cambia entre el envío y la respuesta, los códigos dejan de valer."""
     base = p.get("texto", "")
-    d = _carpeta(p)
-    for nombre in ("guion.md", "opciones.json", "temas.json", "perfil-voz.md") if d else ():
-        if (d / nombre).exists():
-            base += _lee(d / nombre)
+    carpetas = [_carpeta(p)] + [g["carpeta"] for g in _gemelos(p) if g["encargo"] != p.get("encargo")]
+    for d in [c for c in carpetas if c]:
+        for nombre in ("guion.md", "opciones.json", "temas.json", "perfil-voz.md"):
+            if (d / nombre).exists():
+                base += _lee(d / nombre)
     return hashlib.sha256(base.encode()).hexdigest()[:16]
 
 
@@ -483,45 +1155,71 @@ def _cuando(slug: str) -> str:
         return time.strftime("%d-%m %H:%M", time.localtime())
 
 
+def _chips(p: dict) -> list:
+    """Lo que va en la cabecera: puerta de la cadena, ronda y a quién espera (papel y nombres)."""
+    papel = p.get("papel") or "marketing"
+    nombres = [str(x.get("nombre") or k) for k, x in personas(p["canal"]).items() if papel in (x.get("roles") or []) and _correo(x)]
+    try:
+        tope = _cargar("hyt_encargos").rondas_max(p["canal"])
+    except Exception:   # noqa: BLE001
+        tope = 0
+    return [f"Puerta {int(p.get('indice') or 0) + 1} de {p.get('total')}" if int(p.get("total") or 1) > 1 and int(p.get("indice") or 0) >= 0 else "",
+            (f"Ronda {p['ronda']}" + (f" de {tope}" if tope else "")) if p.get("ronda") else "",
+            f"Espera a: {papel}" + (f" ({', '.join(nombres)})" if nombres else "")]
+
+
 def componer(p: dict, cod: dict | None = None) -> dict:
-    """El correo de una puerta: {asunto, texto, html}. Sin `cod`, sin botones (para enseñarlo o probarlo)."""
+    """El correo de una puerta: {asunto, texto, html}. Sin `cod`, sin botones (para enseñarlo o probarlo).
+    Si el HTML pasa de TOPE_HTML, se rehace enseñando menos bloques de cada guion (el texto va siempre entero)."""
+    for limite in (None, 6, 4, 3, 2, 1, 0):
+        m = _componer(p, cod, limite)
+        if len(m["html"].encode()) <= TOPE_HTML:
+            break
+    return m
+
+
+def _componer(p: dict, cod: dict | None, limite: int | None) -> dict:
     PU = _cargar("hyt_puertas")
-    doc, rec = Doc(), {}
-    cab = " · ".join(x for x in (f"Puerta {int(p.get('indice') or 0) + 1} de {p.get('total')}" if int(p.get("total") or 1) > 1 else "",
+    doc, cola, rec = Doc(limite), Doc(limite), {}
+    cab = " · ".join(x for x in (f"Puerta {int(p.get('indice') or 0) + 1} de {p.get('total')}" if int(p.get("total") or 1) > 1 and int(p.get("indice") or 0) >= 0 else "",
                                  f"decide: {p['papel']}" if p.get("papel") else "",
                                  f"ronda {p['ronda']}" if p.get("ronda") else "") if x)
     if cab:
-        doc.parrafo(cab)
+        doc.t.append(cab)
+    graves = PU.graves(p) if p["tipo"] != "datos" else 0
+    if graves:
+        doc.aviso_grande("Tiene un aviso grave: no se puede aprobar; solo rehacer o rechazar.")
     if p["tipo"] in ("revision", "revision-final"):
         _c_revision(p, doc)
     elif p["tipo"] == "elegir-temas":
         _c_temas(p, doc)
     elif p["tipo"] == "elegir-titulo":
         rec = _c_titulo(p, doc)
+    elif p["tipo"] == "elegir-version":
+        _c_version(p, doc, cola)
     elif p["tipo"] == "voz":
         _c_voz(p, doc)
     elif p["tipo"] == "datos":
         _c_datos(p, doc)
     else:
         doc.pre(p.get("texto", ""))
-    if PU.graves(p) and p["tipo"] != "datos":
-        doc.parrafo("⛔ Tiene un aviso grave: no se puede aprobar; solo rehacer o rechazar.", fuerte=True)
     botones, lineas, ayuda = _botones(p, cod, rec) if cod else ([], [], "")
-    texto = f"{p['titulo']}\n\n{doc.texto()}"
+    texto = f"{_nombre_canal(p['canal'])} · {TIPOS.get(p['tipo'], ('Puerta',))[0]}\n{p['titulo']}\n\n{doc.texto()}"
+    if cola.t:
+        texto += "\n\n" + cola.texto()
     if lineas:
         texto += "\n\nPara decidir, responde con UNA de estas líneas (o usa los botones):\n" + "\n".join(lineas) + (f"\n\n{ayuda}" if ayuda else "")
     # asunto único por puerta: con el mismo asunto el correo junta la puerta nueva con las viejas y se pulsa un botón que ya no vale
     return {"asunto": f"🚪 {p['titulo']} · {_cuando(p['canal'])}", "texto": texto,
-            "html": _envolver(p["titulo"], doc.html(), botones, ayuda)}
+            "html": _envolver(p["titulo"], doc.html(), botones, ayuda, p["tipo"], p["canal"], _chips(p), cola.html())}
 
 
 def enviar_puerta(p: dict) -> dict:
     """Envía una puerta abierta a quien tiene su papel, con un código por opción. Devuelve lo que se guarda en la puerta."""
-    PU = _cargar("hyt_puertas")
     a = destinatarios(p["canal"], p.get("papel", ""))
     if not a:
         return {"enviado": B.ahora(), "a": [], "codigos": {}, "hash": _hash(p)}
-    cod = {} if p["tipo"] == "datos" else {o["verbo"]: secrets.token_urlsafe(12) for o in PU.opciones_vigentes(p)}
+    cod = {} if p["tipo"] == "datos" else {o["clave"]: secrets.token_urlsafe(12) for o in opciones_correo(p)}
     if cod:
         cod["deshacer"] = secrets.token_urlsafe(12)
     m = componer(p, cod)
@@ -535,13 +1233,16 @@ def _recordar_botones(p: dict, a: str, ref: str, motivo: str) -> None:
     cod = (p.get("correo") or {}).get("codigos") or {}
     rec = ((_json(_carpeta(p) / "opciones.json") or {}).get("recomendacion") or {}) if p["tipo"] == "elegir-titulo" and _carpeta(p) else {}
     botones, lineas, ayuda = _botones(p, cod, rec) if cod else ([], [], "")
+    cuerpo = _parrafos(motivo)
     if p["tipo"] == "datos":
         doc = Doc()
         _c_datos(p, doc)
         motivo += "\n\n" + doc.texto()
+        cuerpo += doc.html()
     texto = motivo + ("\n\nPara decidir:\n" + "\n".join(lineas) if lineas else "") + (f"\n\n{ayuda}" if ayuda else "")
-    encolar(p["canal"], a, f"No he hecho nada todavía: {p['titulo']}", texto,
-            _html(f"No he hecho nada todavía: {p['titulo']}", motivo, botones, ayuda), en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
+    titulo = f"No he hecho nada todavía: {p['titulo']}"
+    encolar(p["canal"], a, titulo, texto, _envolver(titulo, cuerpo, botones, ayuda, p["tipo"], p["canal"], _chips(p)),
+            en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
 
 
 # ── entrada ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -612,6 +1313,7 @@ def _desconocido(m: dict, de: str) -> str:
 
 
 def _puerta_del_codigo(codigo: str, estados=("abierta", "decidida")) -> tuple:
+    """(puerta, clave del código): la clave es el verbo o, si dos opciones lo comparten, «verbo:letra»."""
     PU = _cargar("hyt_puertas")
     for p in PU.puertas(estados):
         for v, c in ((p.get("correo") or {}).get("codigos") or {}).items():
@@ -620,7 +1322,7 @@ def _puerta_del_codigo(codigo: str, estados=("abierta", "decidida")) -> tuple:
     return None, None
 
 
-def _decidir(p: dict, verbo: str, texto: str, clave: str, de: str, ref: str) -> str:
+def _decidir(p: dict, verbo: str, texto: str, clave: str, de: str, ref: str, etiqueta: str = "") -> str:
     """Decide por correo y contesta: si se firma al momento (aprobar, o sin ventana), un solo correo con el resultado;
     si no, la confirmación con su botón para deshacer."""
     PU = _cargar("hyt_puertas")
@@ -631,7 +1333,7 @@ def _decidir(p: dict, verbo: str, texto: str, clave: str, de: str, ref: str) -> 
     except Rechazo as e:
         _recordar_botones(p, de, ref, f"No se pudo: {e}")
         return f"rechazada: {e}"
-    etiqueta = opcion.get("etiqueta", verbo)
+    etiqueta = etiqueta or opcion.get("etiqueta", verbo)
     if verbo == "acepto" or float(dec.get("firmar_en") or 0) <= time.time():
         try:
             f = PU.firmar_ya(p["id"])
@@ -647,8 +1349,8 @@ def _decidir(p: dict, verbo: str, texto: str, clave: str, de: str, ref: str) -> 
     t = (f"Recibido: «{etiqueta}»" + (f"\n\n{texto}" if texto else "") + f"\n\nSe ejecuta a las {hora} si no lo deshaces."
          + (f"\n\nPara deshacerlo: DESHACER {cod['deshacer']}" if cod.get("deshacer") else ""))
     botones = [_boton("DESHACER", cod["deshacer"], "↩ Deshacer")] if cod.get("deshacer") else []
-    encolar(slug, de, f"🕒 Recibido: {p['titulo']}", t, _html(f"Recibido: {p['titulo']}", t, botones), en_respuesta_a=ref,
-            tipo="confirmacion", puerta=p["id"])
+    encolar(slug, de, f"🕒 Recibido: {p['titulo']}", t, _html(f"Recibido: {p['titulo']}", t, botones, tipo="confirmacion", canal=slug),
+            en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
     return f"decidida {p['id']} ({verbo})"
 
 
@@ -658,7 +1360,7 @@ def _con_codigo(m: dict, de: str, suyos: list, hallado, texto: str) -> str:
     codigo = hallado.group(2)
     resto = _sin_cita(hallado.group(3) or "")
     resto = _sin_ayudas(re.sub(r"\b(" + "|".join(PALABRAS) + r")\s+" + re.escape(codigo) + r"\s*:?", " ", resto)).strip()
-    p, verbo = _puerta_del_codigo(codigo)
+    p, clave_cod = _puerta_del_codigo(codigo)
     if not p:
         return _codigo_viejo(de, suyos, codigo, ref)
     clave = next((k for s, k, _ in suyos if s == p["canal"]), None)
@@ -666,7 +1368,7 @@ def _con_codigo(m: dict, de: str, suyos: list, hallado, texto: str) -> str:
     if not clave:
         return "descartado: el código no es de una puerta de un canal suyo"
     slug = p["canal"]
-    if verbo == "deshacer":
+    if clave_cod == "deshacer":
         try:
             PU.deshacer(p["id"], clave)
             PU.marcar(p["id"], correo=None)   # se reenvía con códigos nuevos
@@ -680,12 +1382,16 @@ def _con_codigo(m: dict, de: str, suyos: list, hallado, texto: str) -> str:
         encolar(slug, de, f"Ya estaba decidida: {p['titulo']}", "Esa puerta ya no está pendiente: no he hecho nada.",
                 en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
         return "ya decidida"
+    verbo, _, letra = str(clave_cod).partition(":")
     if (p.get("correo") or {}).get("hash") != _hash(p):
         PU.marcar(p["id"], correo=None)
         encolar(slug, de, f"Ha cambiado: {p['titulo']}", "Lo que se decide ha cambiado desde que te escribí: te mando la versión nueva. "
                 "No he hecho nada con tu respuesta.", en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
         return "contenido cambiado: se reenvía"
     opcion = next((o for o in p["opciones"] if o["verbo"] == verbo), None) or {}
+    etiqueta = next((o["etiqueta"] for o in opciones_correo(p) if o["clave"] == clave_cod), "")
+    if letra:   # el código ya dice qué se elige (elegir A o elegir B): lo escrito detrás no cambia la elección
+        resto = letra
     if opcion.get("texto") and not resto:
         if verbo == "rechazo":
             resto = "Rechazado por correo, sin motivo"
@@ -693,7 +1399,7 @@ def _con_codigo(m: dict, de: str, suyos: list, hallado, texto: str) -> str:
             _recordar_botones(p, de, ref, "Falta decir cuáles eliges." if verbo == "algunas" else
                               "Falta decir qué hay que cambiar: escríbelo detrás del código.")
             return f"{verbo} sin texto: se pide"
-    return _decidir(p, verbo, resto, clave, de, ref)
+    return _decidir(p, verbo, resto, clave, de, ref, etiqueta)
 
 
 def _codigo_viejo(de: str, suyos: list, codigo: str, ref: str) -> str:
@@ -771,13 +1477,12 @@ def _ayuda_peticiones(slug: str, a: str, ref: str, motivo: str = "") -> None:
               "  ESTADO — te digo cómo va cada vídeo",
               "Cualquier otra cosa no la entiendo: no hay nadie leyendo este buzón."]
     extra = f"\nCANAL: {slug}" if slug else ""
-    botones = [_boton("PROPUESTA", "", "💡 Pedir una propuesta", extra),
-               f'<a href="{html.escape(_mailto("TEMA: ", f"TEMA: {AYUDA_TEMA}{chr(10)}PILAR: {AYUDA_PILAR}{extra}"))}" style="display:inline-block;'
-               'padding:12px 18px;margin:4px 6px 4px 0;border-radius:8px;background:#126a8a;color:#fff;text-decoration:none;'
-               'font-weight:600;font-size:16px">✍️ Tema propio</a>',
-               _boton("ESTADO", "", "📋 Ver el estado", extra)]
+    botones = [_boton("PROPUESTA", "", "💡 Pedir una propuesta", extra, ayuda="Preparo una propuesta de temas y te llega para elegir."),
+               _boton("TEMA:", "", "✍️ Tema propio", f" {AYUDA_TEMA}\nPILAR: {AYUDA_PILAR}{extra}",
+                      ayuda="Escribe el tema (y, si quieres, el pilar): preparo título y miniatura."),
+               _boton("ESTADO", "", "📋 Ver el estado", extra, ayuda="Te digo cómo va cada vídeo.")]
     t = (motivo + "\n\n" if motivo else "") + "\n".join(lineas)
-    encolar(slug, a, "Cómo pedirme algo", t, _html("Cómo pedirme algo", t, botones), en_respuesta_a=ref, tipo="ayuda")
+    encolar(slug, a, "Cómo pedirme algo", t, _html("Cómo pedirme algo", t, botones, tipo="ayuda", canal=slug), en_respuesta_a=ref, tipo="ayuda")
 
 
 def estado_texto(slug: str) -> str:
@@ -932,19 +1637,25 @@ def _paquete_aprobado(p: dict, enc: dict) -> None:
     except Exception:   # noqa: BLE001 — sin la exportación, el fichero limpio que dejó el paquete
         guion = _lee(d / "guion-limpio.txt") or _lee(d / "guion.md")
     doc = Doc()
-    doc.parrafo(f"Aprobado por {p.get('firma', '')}. Ya se puede grabar.")
-    doc.titulo("Título")
+    g = paq.get("guion") or {}
+    mini = paq.get("miniatura") if isinstance(paq.get("miniatura"), dict) else {}
+    doc.parrafo(f"Aprobado por {p.get('firma', '')}. Ya se puede grabar.", fuerte=True)
+    if g.get("palabras"):
+        doc.crudo(_fichas([(g["palabras"], "palabras", ""), (_min(g.get("minutos")), "minutos", "")]))
+    doc.titulo("Título", "▶")
     doc.parrafo(paq.get("titulo", ""), fuerte=True)
-    doc.titulo("Miniatura")
+    doc.crudo(_vista_previa(_nombre_canal(slug), paq.get("titulo", ""), mini.get("texto", ""), g.get("minutos"), paq.get("promesa", ""),
+                            fondo="#14532d"))
+    doc.titulo("Miniatura", "🖼")
     _miniatura(doc, paq.get("miniatura"), con_foto=True)
-    doc.titulo("Descripción")
+    doc.titulo("Descripción", "📄")
     doc.pre(_lee(d / "descripcion.md"))
-    doc.titulo("Guion")
+    doc.titulo("Guion", "📝")
     doc.pre(guion)
     asunto = f"🎬 Aprobado, listo para grabar: {paq.get('titulo') or enc.get('nombre', '')}"
     a = {c for papel in ("presentador", "marketing") for _, c in destinatarios(slug, papel)}
     for correo in sorted(a):
-        encolar(slug, correo, asunto, doc.texto(), _envolver(asunto, doc.html()), tipo="aprobado", puerta=p["id"])
+        encolar(slug, correo, asunto, doc.texto(), _envolver(asunto, doc.html(), tipo="aprobado", canal=slug), tipo="aprobado", puerta=p["id"])
 
 
 def tras_firma(p: dict) -> None:
@@ -1013,7 +1724,17 @@ def resumen() -> int:
                   + (f" · {PU.datos_pendientes(p)} dato(s) por verificar, en el panel" if p["tipo"] == "datos" else "") for p in ps]
         t = (f"Tienes {len(ps)} decisión(es) pendiente(s):\n\n" + "\n".join(lineas)
              + "\n\nCada una tiene su propio correo, con sus botones: búscalo por su título. Los datos se verifican en el panel.")
-        encolar(ps[0]["canal"], correo, f"⏳ Te esperan {len(ps)} decisión(es)", t, tipo="resumen")
+        viejas = sum(1 for p in ps if horas[p["id"]] >= 48)
+        tarjetas = "".join(_tarjeta(
+            _chip(_nombre_canal(p["canal"]), "#f3efe7", TINTA, LINEA) + _chip(TIPOS.get(p["tipo"], ("Puerta",))[0], "#fdf0d5", "#5c3906", "#e6c27a")
+            + f"<div style='font-size:17px;font-weight:800;line-height:1.3;color:{TINTA};margin:2px 0 6px'>{E_(p['titulo'])}</div>"
+            + _chip(f"⏳ espera desde hace {edad(horas[p['id']])}", *(SUAVE["mal" if horas[p["id"]] >= 48 else "ojo"][i] for i in (0, 2, 1)))
+            + (_chip(f"{PU.datos_pendientes(p)} dato(s) por verificar, en el panel", *(SUAVE["ojo"][i] for i in (0, 2, 1))) if p["tipo"] == "datos" else ""),
+            LINEA, ROJO if horas[p["id"]] >= 48 else "#d97706") for p in ps)
+        cuerpo = (_fichas([(len(ps), "pendientes", "ojo"), (viejas, "más de 2 días", "mal" if viejas else "bien")]) + tarjetas
+                  + _parrafos("Cada una tiene su propio correo, con sus botones: búscalo por su título. Los datos se verifican en el panel."))
+        asunto = f"⏳ Te esperan {len(ps)} decisión(es)"
+        encolar(ps[0]["canal"], correo, asunto, t, _envolver(asunto, cuerpo, tipo="resumen", canal=ps[0]["canal"]), tipo="resumen")
         hechos[correo] = _hoy()
         n += 1
     B.escribir(f, {k: v for k, v in hechos.items() if v == _hoy()})

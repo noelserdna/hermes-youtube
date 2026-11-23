@@ -149,6 +149,61 @@ deja('cierre.json', {'cambios': []}); S.p_descripcion('cocina', d, {}); c = lee(
 assert c['pendientes'] == [] and c['ya_corregido'][0]['quedaria'] == 'Te lo cuento.', c
 deja('descripcion.json', {'resumen': 'El arroz y su agua. Te lo cuento en el siguiente vídeo.', 'capitulos': [{'titulo': 'La regla', 'desde': 'intro'}]})
 r = S.t_descripcion('cocina', d, {}); assert 'siguiente vídeo' not in (d / 'descripcion.md').read_text() and 'Te lo cuento.' in lee('descripcion.json')['resumen'] and 'cambiadas otra vez' in r['resumen'], r"
+caso "investigación: solo pasan las citas literales de fuentes que existen y se vuelven a encontrar" '
+import types
+(d / "externas").mkdir(exist_ok=True)
+VID = "Cada nodo comprueba la firma, el saldo y que esas monedas no se hayan gastado ya antes de aceptar el pago"
+DOC = "Una transacción solo es válida si todas sus entradas existen y no han sido gastadas por otra transacción anterior"
+NEWS = "Este año la red ha actualizado sus reglas de validación para que los nodos comprueben más rápido las firmas"
+(d / "externas" / "w1.txt").write_text("[0:00] hola. " + VID + ". Suscríbete.")
+(d / "externas" / "w2.txt").write_text("Documentación. " + DOC + ".")
+(d / "externas" / "w3.txt").write_text(NEWS)
+(d / "externas" / "w4.txt").write_text("texto inventado que nadie publicó nunca en ninguna parte del mundo real")
+(d / "externas" / "w5.txt").write_text("Otra noticia que ya no está en la página cuando se vuelve a descargar hoy mismo")
+vivo = {"https://doc.ejemplo.org/tx": "<html><p>" + DOC.replace("transacción", "transacci&oacute;n") + "</p></html>",
+        "https://noticias.ejemplo.org/1": "<p>" + NEWS + "</p>", "https://noticias.ejemplo.org/2": "<p>cambiada</p>"}
+def pedir(url):
+    if url not in vivo: raise OSError("no responde")
+    import html, re; return html.unescape(re.sub(r"<[^>]+>", " ", vivo[url]))
+S.PEDIR_WEB = pedir
+class Fallo(Exception): pass
+S.YOUTUBE = types.SimpleNamespace(
+    existe=lambda u: {"titulo": "Cómo valida un nodo un pago", "canal": "Canal X"} if "abcdefghijk" in u else (_ for _ in ()).throw(Fallo("no existe")),
+    transcripcion=lambda u: {"texto": "[0:00] hola. " + VID})
+h = lambda f, c: {"fuente": f, "cita": c, "dicho": c[:30], "para": "explicacion", "aporta": "actualidad"}
+deja("investigacion.json", {"fuentes": [
+    {"id": "w1", "url": "https://www.youtube.com/watch?v=abcdefghijk", "titulo": "Cómo valida un nodo un pago", "tipo": "youtube"},
+    {"id": "w2", "url": "https://doc.ejemplo.org/tx", "titulo": "Doc", "tipo": "doc"},
+    {"id": "w3", "url": "https://noticias.ejemplo.org/1", "titulo": "Noticia", "tipo": "noticia"},
+    {"id": "w4", "url": "https://www.youtube.com/watch?v=zzzzzzzzzzz", "titulo": "Inventado", "tipo": "youtube"},
+    {"id": "w5", "url": "https://noticias.ejemplo.org/2", "titulo": "Cambiada", "tipo": "noticia"},
+    {"id": "w6", "url": "http://inseguro.ejemplo.org", "titulo": "http", "tipo": "articulo"}],
+  "hallazgos": [h("w1", VID), h("w2", DOC), h("w3", NEWS), h("w4", "texto inventado que nadie publicó nunca en ninguna parte"),
+                h("w5", "Otra noticia que ya no está en la página cuando se vuelve a descargar"),
+                h("w1", "una frase que no aparece en la transcripción guardada de este vídeo"), h("w6", "lo que sea de una web sin https")]})
+r = S.t_investigacion("cocina", d, {}); x = lee("investigacion.json")
+assert "3 hallazgos comprobados" in r["resumen"], r
+assert sorted(y["fuente"] for y in x["hallazgos"]) == ["w1", "w2", "w3"] and all(y["comprobado"] and y["url"] for y in x["hallazgos"])
+assert len(x["dudosos"]) == 1 and x["dudosos"][0]["versiones"][0]["fuente"] == "https://noticias.ejemplo.org/2", x["dudosos"]
+f = {y["id"]: y for y in x["fuentes"]}
+assert f["w4"]["comprobada"] is False and "w6" not in f and f["w1"]["comprobada"] is True
+S.p_investigacion("cocina", d, {})
+assert (d / "fuentes" / "web" / "w1.txt").exists() and not (d / "fuentes" / "web" / "w4.txt").exists()
+deja("material.json", {"palabras_utiles": 0, "material": [{"n": 1, "fuente": "web/w2", "cita": DOC, "externo": True},
+                                                          {"n": 2, "fuente": "web/w4", "cita": "texto inventado que nadie publicó nunca"}]})
+assert S._cita_web(d, "w2", DOC) and not S._cita_web(d, "w4", "texto inventado que nadie publicó nunca")
+deja("investigacion.json", {"fuentes": [], "hallazgos": []})
+assert "fallo" in S.t_investigacion("cocina", d, {})'
+caso "datos: lo que el guion toma de fuera se verifica siempre, con su enlace" '
+deja("investigacion.json", {"fuentes": [{"id": "w2", "url": "https://doc.ejemplo.org/tx"}], "hallazgos": []})
+deja("material.json", {"material": [{"n": 1, "fuente": "charlas/v01", "dicho": "propio"},
+                                    {"n": 2, "fuente": "web/w2", "dicho": "Una entrada gastada invalida la transacción", "externo": True},
+                                    {"n": 3, "fuente": "web/w2", "dicho": "no se usa en el guion", "externo": True}]})
+deja("guion.md", "## intro\nAlgo propio.[1] Algo de fuera.[2]\n")
+deja("verificacion.json", {"cambios": [], "datos": []})
+S.t_datos("cocina", d, {}); x = lee("datos.json")["datos"]
+assert [(y["n"], y["fuente"], y["motivo"]) for y in x] == [(2, "https://doc.ejemplo.org/tx", "externo")], x
+S.t_datos("cocina", d, {}); assert len(lee("datos.json")["datos"]) == 1'
 caso "paquete: guion limpio para el teleprompter, guion numerado y la nota de la revisión" "
 deja('guion.md', '''$GUION''')
 deja('eleccion.json', {'titulo': 'Arroz suelto: la regla del agua', 'miniatura': {'texto': '100 ML'}, 'promesa': 'x', 'palabras_clave': ['arroz']})

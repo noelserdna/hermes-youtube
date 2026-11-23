@@ -1,8 +1,9 @@
 """Correo de hermes-youtube: un solo buzón para todos los canales, y decisiones por CÓDIGO (nunca por un modelo).
 
 Las personas de cada canal están en canal.json → personas ({clave: {nombre, correo, roles}}). El Worker de Cloudflare
-(correo/) recibe en el buzón, comprueba que el correo es auténtico y no automático, y lo deja en una cola; el ciclo
-(cada minuto, desde el bucle del plugin o con «hyt correo ciclo») lo recoge, envía lo pendiente y firma lo decidido.
+(correo/), o un buzón normal por IMAP y SMTP (hyt_buzon.py), recibe en el buzón, comprueba que el correo es auténtico
+y no automático, y lo deja en una cola; el ciclo (cada minuto, desde el bucle del plugin o con «hyt correo ciclo») lo
+recoge, envía lo pendiente y firma lo decidido.
 
   · Puertas: cada puerta abierta se envía a las personas del canal con su papel (sin papel, a las de marketing), con el
     contenido completo y botones mailto: que llevan un código de un solo uso por opción (APROBAR <código>, REHACER
@@ -86,11 +87,15 @@ def conf() -> dict:
 
 def activo() -> bool:
     c = conf()
+    if c.get("HYT_CORREO_IMAP"):   # buzón normal por IMAP y SMTP (hyt_buzon) en lugar del Worker
+        return all(c.get(k) for k in ("HYT_CORREO_BUZON", "HYT_CORREO_SMTP", "HYT_CORREO_USUARIO", "HYT_CORREO_CLAVE"))
     return bool(c.get("HYT_CORREO_URL") and c.get("HYT_CORREO_SECRETO") and c.get("HYT_CORREO_BUZON"))
 
 
 def _http(metodo: str, ruta: str, cuerpo: dict | None = None) -> dict:
     c = conf()
+    if c.get("HYT_CORREO_IMAP"):
+        return _cargar("hyt_buzon").llamar(c, metodo, ruta, cuerpo, _dir())
     url = c["HYT_CORREO_URL"].rstrip("/")
     if url.startswith("file://"):   # doble para las pruebas: una carpeta con pendientes.json y enviados.jsonl
         d = Path(url[7:])

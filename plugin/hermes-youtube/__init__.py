@@ -333,6 +333,59 @@ def _asegurar_bucle() -> None:
         _RT["bucle_correo"] = asyncio.get_running_loop().create_task(_bucle_correo())
 
 
+def vuelta_sin_telegram() -> None:
+    """Lo que hace el bucle cuando no hay Telegram (solo correo y panel): vueltas de verificación, firmar lo decidido en
+    el panel cuya ventana pasó, el ciclo del correo (que firma lo decidido por correo) y el latido."""
+    try:
+        _cargar("hyt_encargos").vueltas_pendientes()
+    except Exception as e:   # noqa: BLE001
+        log.warning("hermes-youtube: vueltas de verificación: %s", e)
+    for p in PU.puertas(("decidida",)):
+        medio = ((p.get("decision") or {}).get("actor") or {}).get("medio")
+        if medio not in ("local", "email") and time.time() >= float(p.get("firmar_en") or 0):
+            try:
+                PU.firmar(p["id"])
+            except B.Rechazo as e:
+                log.warning("hermes-youtube: no se pudo firmar %s: %s", p["id"], e)
+    try:
+        _cargar("hyt_correo").ciclo()
+    except Exception:   # noqa: BLE001
+        log.exception("hermes-youtube: error en el ciclo del correo (sigue)")
+    try:
+        B.escribir(B.home() / "latido.json", {"ts": B.ahora(), "pid": os.getpid(), "sin_telegram": True})
+    except Exception:   # noqa: BLE001
+        pass
+
+
+def _hilo_sin_telegram() -> None:
+    """Sin bot de Telegram, el bucle asíncrono no arranca nunca (lo arranca el bot). Este hilo lo sustituye: un solo
+    proceso a la vez (cerrojo de fichero; el que lo tiene es el gateway, que vive siempre) y se aparta si aparece Telegram."""
+    import fcntl
+    import threading
+
+    def correr():
+        try:
+            f = open(B.home() / "bucle.lock", "w")
+        except OSError:
+            return
+        while True:
+            try:
+                fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                time.sleep(60)
+        log.info("hermes-youtube: bucle sin Telegram en marcha (correo y panel)")
+        while True:
+            time.sleep(60)
+            if _RT.get("app"):   # con Telegram manda el bucle asíncrono
+                continue
+            vuelta_sin_telegram()
+
+    if not _RT.get("hilo"):
+        _RT["hilo"] = threading.Thread(target=correr, daemon=True, name="hermes-youtube-bucle")
+        _RT["hilo"].start()
+
+
 # ── comandos ────────────────────────────────────────────────────────────────────────────────────────────────────────
 def _persona_sesion():
     try:
@@ -385,6 +438,8 @@ def register(ctx):
         perfil = ""
     if hasattr(ctx, "register_hook") and perfil == "default":
         ctx.register_hook("pre_llm_call", _hook_turno)
+    if perfil == "default" and not os.environ.get("HYT_SIN_BUCLE"):
+        _hilo_sin_telegram()
 
     def _wire(application, adapter):
         from telegram.ext import CallbackQueryHandler, MessageHandler, filters

@@ -1126,10 +1126,11 @@ def _botones(p: dict, cod: dict, rec: dict | None = None) -> tuple:
             extra = f"\ntitulo: {(rec or {}).get('titulo') or 1}\nminiatura: {(rec or {}).get('miniatura') or 1}"
         botones.append(_boton(pal, cod[clave], o["etiqueta"], extra, ayuda=_ayuda_boton(p, o)))
         lineas.append(f"  {pal} {cod[clave]}" + (f": {o['letra']}" if o.get("letra") else ": …" if extra.startswith(":") else ""))
-    ayuda = {"elegir-temas": "Para elegir, escribe los números, por ejemplo: 1, 4, 7 (los suplentes siguen la numeración). «todos» elige todos los propuestos.",
+    ayuda = {"elegir-temas": "Lo más fácil: responde a este correo escribiendo solo los números, por ejemplo: 1, 4, 7 (los suplentes siguen "
+                             "la numeración; «todos» elige todos los propuestos). También vale el botón «Elegir», escribiendo los números detrás del código.",
              "elegir-titulo": "El botón de elegir ya lleva la pareja recomendada: basta con enviarlo. Puedes cambiar los números, escribir un "
                               "título propio («titulo: …»), añadir «nota: …» para la miniatura y «destino: …» para el vídeo al que lleva el cierre.",
-             "elegir-version": "Cada botón de elegir ya lleva su versión: basta con enviarlo. Un texto libre no decide nada.",
+             "elegir-version": "Cada botón de elegir ya lleva su versión: basta con enviarlo. También puedes responder a este correo con la letra: A o B.",
              }.get(tipo, "Para pedir cambios, responde a este correo diciendo qué cambiar (o usa «Rehacer»). Un «ok» o un «gracias» no deciden nada."
                    if tipo in REVISAR else "")
     return botones, lineas, ayuda
@@ -1168,19 +1169,21 @@ def _chips(p: dict) -> list:
             f"Espera a: {papel}" + (f" ({', '.join(nombres)})" if nombres else "")]
 
 
-def componer(p: dict, cod: dict | None = None) -> dict:
+def componer(p: dict, cod: dict | None = None, previo: tuple = ()) -> dict:
     """El correo de una puerta: {asunto, texto, html}. Sin `cod`, sin botones (para enseñarlo o probarlo).
     Si el HTML pasa de TOPE_HTML, se rehace enseñando menos bloques de cada guion (el texto va siempre entero)."""
     for limite in (None, 6, 4, 3, 2, 1, 0):
-        m = _componer(p, cod, limite)
+        m = _componer(p, cod, limite, previo)
         if len(m["html"].encode()) <= TOPE_HTML:
             break
     return m
 
 
-def _componer(p: dict, cod: dict | None, limite: int | None) -> dict:
+def _componer(p: dict, cod: dict | None, limite: int | None, previo: tuple = ()) -> dict:
     PU = _cargar("hyt_puertas")
     doc, cola, rec = Doc(limite), Doc(limite), {}
+    if previo:   # (texto, html) que va delante de todo: por qué se vuelve a preguntar y cómo contestar
+        doc.crudo(previo[1], previo[0])
     cab = " · ".join(x for x in (f"Puerta {int(p.get('indice') or 0) + 1} de {p.get('total')}" if int(p.get("total") or 1) > 1 and int(p.get("indice") or 0) >= 0 else "",
                                  f"decide: {p['papel']}" if p.get("papel") else "",
                                  f"ronda {p['ronda']}" if p.get("ronda") else "") if x)
@@ -1243,6 +1246,93 @@ def _recordar_botones(p: dict, a: str, ref: str, motivo: str) -> None:
     titulo = f"No he hecho nada todavía: {p['titulo']}"
     encolar(p["canal"], a, titulo, texto, _envolver(titulo, cuerpo, botones, ayuda, p["tipo"], p["canal"], _chips(p)),
             en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
+
+
+# ── volver a preguntar ──────────────────────────────────────────────────────────────────────────────────────────────
+ELIGEN = (*ELEGIR, "elegir-version")
+REPREGUNTAS_MAX = 3   # fuera del hilo, una puerta se vuelve a mandar como mucho tres veces (luego, la ayuda corta)
+COMO_ELEGIR = {
+    "elegir-temas": ["Responde a ESTE correo escribiendo solo los números de los temas que quieres, por ejemplo: 2, 6, 7.",
+                     "Los suplentes siguen la numeración. «todos» elige todos los propuestos.",
+                     "No hace falta nada más: con tu respuesta queda elegido (tendrás 30 minutos para deshacerlo)."],
+    "elegir-titulo": ["Responde a ESTE correo con el número del título y el de la miniatura, por ejemplo: título 2, miniatura 1.",
+                      "Si te vale lo recomendado, escribe solo: recomendado."],
+    "elegir-version": ["Responde a ESTE correo con la letra de la versión que quieres: A o B.",
+                       "O pulsa el botón de la versión: el correo que se abre ya lleva la letra."],
+}
+_RELLENO = r"\b(temas?|t[ií]tulos?|miniaturas?|n[uú]meros?|el|la|los|las|elijo|eligo|quiero|me|quedo|con|y|e|de|del|n[ºo°]\.?)\b"
+
+
+def eleccion_en(p: dict, texto: str) -> str:
+    """Lo que alguien quiso elegir en una puerta de elegir, si se entiende sin dudas («2, 6, 7, 15», «todos», «B»,
+    «título 2, miniatura 1», «recomendado»); si no, «»."""
+    t = _sin_ayudas(_sin_cita(str(texto or ""))).strip()
+    if not t or len(t) > 160:
+        return ""
+    llano = _cargar("hyt_texto").plano(t)
+    if p.get("tipo") == "elegir-version":
+        letras = [str(g.get("letra", "")).upper() for g in p.get("gemelos") or []]
+        versiones = {str(g.get("version", "")).lower(): str(g.get("letra", "")).upper() for g in p.get("gemelos") or []}
+        resto = re.sub(r"\b(la|version|versi[oó]n|elijo|quiero|me|quedo|con|opcion)\b", " ", llano)
+        hallados = {w.upper() for w in re.findall(r"\b([a-h])\b", resto) if w.upper() in letras}
+        hallados |= {l for v, l in versiones.items() if v and v in llano}
+        return hallados.pop() if len(hallados) == 1 else ""
+    if p.get("tipo") == "elegir-titulo" and re.fullmatch(r"\s*(lo\s+)?recomendad[oa]s?\.?\s*", llano):
+        rec = ((_json(_carpeta(p) / "opciones.json") or {}).get("recomendacion") or {}) if _carpeta(p) else {}
+        return f"titulo: {rec.get('titulo') or 1}\nminiatura: {rec.get('miniatura') or 1}"
+    if p.get("tipo") == "elegir-temas" and re.fullmatch(r"\s*tod[oa]s(\s+los\s+temas)?\.?\s*", llano):
+        return "todos"
+    if p.get("tipo") == "elegir-titulo":
+        m_t = re.search(r"t[ií]tulo\D{0,6}(\d+)", llano)
+        m_m = re.search(r"miniatura\D{0,6}(\d+)", llano)
+        if m_t or m_m:
+            if re.sub(r"t[ií]tulo|miniatura|[\d\s,;:.y]", "", llano).strip():
+                return ""
+            return "\n".join(x for x in (f"titulo: {m_t.group(1)}" if m_t else "", f"miniatura: {m_m.group(1)}" if m_m else "") if x)
+    resto = re.sub(_RELLENO, " ", llano)
+    if not re.fullmatch(r"[\d\s,;.:/\-–]+", resto) or not re.search(r"\d", resto):
+        return ""
+    nums = re.findall(r"\d+", resto)
+    if p.get("tipo") == "elegir-titulo":
+        return f"titulo: {nums[0]}" + (f"\nminiatura: {nums[1]}" if len(nums) > 1 else "") if len(nums) <= 2 else ""
+    return ", ".join(nums)
+
+
+def preguntar_de_nuevo(p: dict, a: str, ref: str, motivo: str, propuesta: str = "") -> None:
+    """Cuando una respuesta no se ha entendido: se vuelve a mandar la puerta ENTERA, con sus botones, y delante, en
+    grande, qué ha pasado y cómo contestar. Con `propuesta` (lo que parece que quiso elegir), un botón para confirmarlo
+    con un clic. No decide nada."""
+    cod = (p.get("correo") or {}).get("codigos") or {}
+    como = COMO_ELEGIR.get(p["tipo"]) or (["Usa uno de los botones de abajo; para pedir cambios, responde a este correo diciendo qué cambiar."]
+                                         if p["tipo"] in REVISAR else ["Usa uno de los botones de abajo."])
+    t = [motivo, "", "Cómo contestar:"] + [f"  • {x}" for x in como]
+    fondo, borde, color = SUAVE["ojo"]
+    h = (f"<tr><td style='padding:14px 16px;color:{color};font-size:16px;line-height:1.5'>"
+         f"<div style='font-size:17px;font-weight:800;margin:0 0 6px'>🔁 {E_(motivo)}</div>"
+         f"<div style='font-weight:700;margin:8px 0 4px'>Cómo contestar:</div>"
+         + "".join(f"<div style='margin:4px 0'>• {E_(x)}</div>" for x in como) + "</td></tr>")
+    caja = _tabla(h, f"margin:10px 0 14px;background:{fondo};border:2px solid {borde};border-radius:12px")
+    clave = next((o["clave"] for o in opciones_correo(p) if o["verbo"] == "algunas"
+                  and (not o.get("letra") or o.get("letra") == propuesta)), None)
+    if propuesta and clave and cod.get(clave):
+        legible = propuesta.replace("\n", " · ")
+        t += ["", f"¿Es esto lo que quieres elegir? {legible}", f"Para confirmarlo, envía: ELEGIR {cod[clave]}: {legible}"]
+        caja += _boton("ELEGIR", cod[clave], f"✅ Sí, elijo {legible}", "" if ":" in clave else f": {propuesta}",
+                       ayuda="Pulsa y envía el correo que se abre: con eso queda elegido.")
+    m = componer(p, cod or None, ("\n".join(t), caja))
+    titulo = f"🔁 Te lo vuelvo a preguntar: {p['titulo']}"
+    encolar(p["canal"], a, titulo, m["texto"], m["html"], en_respuesta_a=ref, tipo="repregunta", puerta=p["id"])
+    PU = _cargar("hyt_puertas")
+    PU.marcar(p["id"], repreguntas=int(p.get("repreguntas") or 0) + 1)
+
+
+def _pendientes_de(suyos: list) -> list:
+    """Las puertas abiertas (ya enviadas por correo) que esta persona puede decidir, la más reciente primero."""
+    PU = _cargar("hyt_puertas")
+    claves = {s: k for s, k, _ in suyos}
+    ps = [p for p in PU.puertas(("abierta",)) if p["canal"] in claves and (p.get("correo") or {}).get("enviado")
+          and p["tipo"] != "datos" and _puede(p, claves[p["canal"]])]
+    return sorted(ps, key=lambda p: p.get("creada", ""), reverse=True)
 
 
 # ── entrada ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1396,8 +1486,10 @@ def _con_codigo(m: dict, de: str, suyos: list, hallado, texto: str) -> str:
         if verbo == "rechazo":
             resto = "Rechazado por correo, sin motivo"
         else:
-            _recordar_botones(p, de, ref, "Falta decir cuáles eliges." if verbo == "algunas" else
-                              "Falta decir qué hay que cambiar: escríbelo detrás del código.")
+            if verbo == "algunas":
+                preguntar_de_nuevo(p, de, ref, "Pulsaste «Elegir», pero el correo me llegó sin decir cuáles eliges, así que no he hecho nada.")
+                return f"{verbo} sin texto: se vuelve a preguntar"
+            _recordar_botones(p, de, ref, "Falta decir qué hay que cambiar: escríbelo detrás del código.")
             return f"{verbo} sin texto: se pide"
     return _decidir(p, verbo, resto, clave, de, ref, etiqueta)
 
@@ -1430,6 +1522,15 @@ def _en_hilo(m: dict, de: str, suyos: list, p: dict, texto: str) -> str:
         encolar(p["canal"], de, f"Ya estaba decidida: {p['titulo']}", "Esa puerta ya no está pendiente: no he hecho nada con tu respuesta.",
                 en_respuesta_a=ref, tipo="confirmacion", puerta=p["id"])
         return "hilo de una puerta ya decidida"
+    if p["tipo"] in ELIGEN:
+        if not _puede(p, clave):
+            _recordar_botones({**p, "correo": {}}, de, ref, f"Esta puerta la decide quien tiene el papel «{p.get('papel') or 'marketing'}».")
+            return "elección de quien no decide esta puerta"
+        sel = eleccion_en(p, texto)
+        if not sel:
+            preguntar_de_nuevo(p, de, ref, "No he entendido qué eliges en tu respuesta, así que no he hecho nada.")
+            return "elección sin entender: se vuelve a preguntar"
+        return _decidir(p, "algunas", sel, clave, de, ref, f"✅ Elegir: {sel}")
     if p["tipo"] not in REVISAR:
         _recordar_botones(p, de, ref, "Aquí un texto libre no decide nada: " + ("los datos se verifican en el panel." if p["tipo"] == "datos"
                                                                               else "usa uno de los botones."))
@@ -1529,6 +1630,10 @@ def _peticion(m: dict, de: str, suyos: list, texto: str) -> str:
             return "petición: estado"
         if orden["orden"] == "propuesta":
             e = E.lanzar(slug, "propuesta", {}, quien=quien)
+            espera = next((p for p in _pendientes_de(suyos) if p.get("encargo") == e["id"]), None) if e.get("duplicado") else None
+            if espera:
+                preguntar_de_nuevo(espera, de, ref, "Ya tienes una propuesta de temas esperando a que elijas: no lanzo otra. Te la vuelvo a mandar.")
+                return f"petición: propuesta ya esperando ({espera['id']}): se vuelve a mandar"
             ya = " (ya había una en marcha: no lanzo otra)" if e.get("duplicado") else ""
             encolar(slug, de, "💡 Propuesta de temas en marcha", f"Estoy preparando una propuesta de temas{ya}. Cuando esté, te llegará "
                     "un correo para elegir.", en_respuesta_a=ref, tipo="respuesta")
@@ -1574,6 +1679,25 @@ def procesar(m: dict) -> str:
             pass
     if not texto and not str(m.get("asunto") or "").strip():
         return "vacío"
+    if not intencion(m.get("asunto", ""), texto):
+        # no es una petición: si tiene algo pendiente, se le vuelve a preguntar con eso delante (y, si parece una
+        # elección clara de una sola puerta, con un botón para confirmarla). Fuera del hilo no se decide nada.
+        pend = [p for p in _pendientes_de(suyos) if int(p.get("repreguntas") or 0) < REPREGUNTAS_MAX]
+        if pend:
+            dicho = " ".join(x for x in (str(m.get("asunto") or "").strip(), texto.strip()) if x)[:120]
+            ref = m.get("message_id") or ""
+            m["_canal"] = pend[0]["canal"]
+            claras = [(p, eleccion_en(p, dicho)) for p in pend if p["tipo"] in ELIGEN]
+            claras = [(p, sel) for p, sel in claras if sel]
+            if len(claras) == 1:
+                p, sel = claras[0]
+                preguntar_de_nuevo(p, de, ref, f"Me escribiste «{dicho}» en un correo nuevo, sin el código de la puerta, así que no he "
+                                   f"hecho nada todavía. ¿Querías elegir {sel.replace(chr(10), ' · ')}?", propuesta=sel)
+                return f"parece una elección: se pide confirmar ({p['id']})"
+            p = pend[0]
+            otras = f" Tienes {len(pend)} decisiones pendientes; esta es la más reciente." if len(pend) > 1 else ""
+            preguntar_de_nuevo(p, de, ref, f"No he entendido tu mensaje («{dicho}»), así que no he hecho nada.{otras}")
+            return f"sin entender: se vuelve a preguntar ({p['id']})"
     return _peticion(m, de, suyos, texto)
 
 

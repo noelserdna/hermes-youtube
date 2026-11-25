@@ -132,7 +132,8 @@ print(eid, g, file=open(T / "revision", "w"))
 caso "un «sí» suelto no decide; en el hilo, un acuse («perfecto, gracias») tampoco: se contesta con los botones" '
 eid, g = open(T / "revision").read().split(); c = cod(g); n = len(enviados())
 hilo = mid(para("marta@ejemplo.com", enviados())[0])
-assert llega("marta@ejemplo.com", "sí", "sí, adelante").startswith("ayuda") and PU.leer(g)["estado"] == "abierta"
+assert llega("marta@ejemplo.com", "sí", "sí, adelante").startswith("sin entender: se vuelve a preguntar") and PU.leer(g)["estado"] == "abierta"
+assert "Te lo vuelvo a preguntar" in enviados()[-1]["subject"] and "No he entendido tu mensaje" in enviados()[-1]["text"]
 for acuse in ("Perfecto, gracias", "ok", "👍", "Recibido, muchas gracias. Un saludo", "Vale, de acuerdo"):
     assert not HC.con_instruccion(acuse), acuse
     assert llega("marta@ejemplo.com", "Re: Guion", acuse + "\n\nEl lun, 16 nov 2026 a las 10:00, hermes escribió:\n> En la frase 2 cambia el orden de las palabras", hilo) == "respuesta sin instrucción: botones"
@@ -251,19 +252,42 @@ B.escribir(d / "temas.json", {"temas": [tema(1, "Arroz al horno", "arroces"), te
 g = abrir(e["id"]); HC.enviar_puertas(); c = cod(g); env = enviados()
 m = para("marta@ejemplo.com", env)[-1]
 for trozo in ("1. [arroces] Arroz al horno\nResumen de Arroz al horno\nNota: 21 · «Yo vería Arroz al horno»", "2. [guisos] El sofrito lento", "Parecido a: El sofrito de siempre",
-              "SUPLENTES", "4. [arroces] Arroz caldoso", "El pilar «arroces» se queda corto", "escribe los números, por ejemplo: 1, 4, 7"):
+              "SUPLENTES", "4. [arroces] Arroz caldoso", "El pilar «arroces» se queda corto", "responde a este correo escribiendo solo los números, por ejemplo: 1, 4, 7"):
     assert trozo in m["text"], trozo
 assert "Arroz caldoso" in m["html"] and ">4</div>" in m["html"] and set(c) == {"algunas", "cambios", "rechazo", "deshacer"}
 assert cuerpo(m["html"], "ELEGIR") == "ELEGIR " + c["algunas"] + ": " + HC.AYUDA_TEMAS and cuerpo(m["html"], "OTRA") == "OTRA " + c["cambios"] and cuerpo(m["html"], "NINGUNO").startswith("NINGUNO " + c["rechazo"])
 n = len(env)
-assert llega("marta@ejemplo.com", "Re: temas", "Me gustan mucho el primero y el tercero de la lista que has mandado", mid(m)) == "texto libre en una puerta que no lo admite: botones"
-assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas"], "ELEGIR " + c["algunas"] + ": " + HC.AYUDA_TEMAS) == "algunas sin texto: se pide"   # enviado sin escribir nada
-assert PU.leer(g)["estado"] == "abierta" and "Falta decir cuáles eliges" in enviados()[-1]["text"]
+assert llega("marta@ejemplo.com", "Re: temas", "Me gustan mucho el primero y el tercero de la lista que has mandado", mid(m)) == "elección sin entender: se vuelve a preguntar"
+assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas"], "ELEGIR " + c["algunas"] + ": " + HC.AYUDA_TEMAS) == "algunas sin texto: se vuelve a preguntar"   # enviado sin escribir nada
+r = enviados()[-1]
+assert PU.leer(g)["estado"] == "abierta" and "sin decir cuáles eliges" in r["text"] and "Responde a ESTE correo" in r["text"] and "Arroz caldoso" in r["text"]
+assert cuerpo(r["html"], "ELEGIR") == "ELEGIR " + c["algunas"] + ": " + HC.AYUDA_TEMAS          # la puerta entera, con sus botones de siempre
+# un correo nuevo, sin código, con solo los números: no decide; vuelve a preguntar con un botón que ya lleva la elección
+assert llega("marta@ejemplo.com", "2,3", "").startswith("parece una elección: se pide confirmar") and PU.leer(g)["estado"] == "abierta"
+r = enviados()[-1]
+assert "¿Querías elegir 2, 3?" in r["text"] and cuerpo(r["html"], "ELEGIR") == "ELEGIR " + c["algunas"] + ": 2, 3", cuerpo(r["html"], "ELEGIR")
+assert HC.eleccion_en(PU.leer(g), "Me quedo con los temas 1 y 4") == "1, 4" and HC.eleccion_en(PU.leer(g), "todos") == "todos"
+assert HC.eleccion_en(PU.leer(g), "el 1 me gusta pero el 2 no") == ""
 assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas"], "ELEGIR " + c["algunas"] + ": 1, 7").startswith("rechazada:") and PU.leer(g)["estado"] == "abierta"   # el 7 no existe
 assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas"], "ELEGIR " + c["algunas"] + ": 1, 4\n\n-- \nMarta") == f"decidida {g} (algunas)"
 p = PU.leer(g); assert p["decision"]["texto"] == "1, 4" and p["firmar_en"] - time.time() > 1500
 p = firma_ya(g); assert "2 tema(s) en marcha" in p["resultado"], p["resultado"]
 assert sorted(x["params"]["tema"] for x in E.listar("demo") if x["pipeline"] == "titulo-miniatura") == ["Arroz al horno", "Arroz caldoso"]
+'
+caso "volver a preguntar: en el hilo, solo los números eligen (con ventana); PROPUESTA con una ya esperando la vuelve a mandar" '
+for x in E.listar("demo"):                       # las propuestas anteriores, cerradas: solo cuenta la de este caso
+    if x["pipeline"] == "propuesta" and x.get("estado") != "cerrado":
+        x["estado"] = "cerrado"; E.guardar("demo", x)
+for p0 in PU.puertas(("abierta",)):
+    if p0["tipo"] == "elegir-temas": B.escribir(PU.indice(p0["id"]), {**p0, "estado": "reemplazada"})
+e = E.lanzar("demo", "propuesta"); d = E.carpeta("demo", e["id"])
+tema = lambda n, t: {"n": n, "id": f"c{n}", "pilar": "arroces", "titulo": t, "resumen": "r", "nota": 20, "piezas": ["p1"], "origen": ["charlas/v01"]}
+B.escribir(d / "temas.json", {"temas": [tema(1, "Arroz negro"), tema(2, "Arroz meloso")], "suplentes": []})
+g = abrir(e["id"]); HC.enviar_puertas(); m = para("marta@ejemplo.com", enviados())[-1]
+res = llega("marta@ejemplo.com", "PROPUESTA", "PROPUESTA\nCANAL: demo"); assert res.startswith("petición: propuesta ya esperando") and PU.leer(g)["estado"] == "abierta", res
+r = enviados()[-1]; assert "Ya tienes una propuesta de temas esperando" in r["text"] and "Arroz meloso" in r["text"]
+assert llega("marta@ejemplo.com", "Re: temas", "2\n\nEl lun, 16 nov 2026, hermes escribió:\n> 1. Arroz negro", mid(r)) == f"decidida {g} (algunas)"
+p = PU.leer(g); assert p["decision"]["texto"] == "2" and p["decision"]["actor"]["medio"] == "email" and p["firmar_en"] - time.time() > 1500
 '
 caso "elegir título: títulos con sus caracteres y su corte en móvil, ideas de miniatura y recomendación; el botón ELEGIR ya lleva la pareja recomendada" '
 e = next(x for x in E.listar("demo") if x["pipeline"] == "titulo-miniatura" and x["params"]["tema"] == "Arroz al horno"); d = E.carpeta("demo", e["id"])
@@ -281,7 +305,8 @@ for trozo in ("Recomendación: título 2 con la miniatura 1 (alternativa: títul
     assert trozo in m["text"], trozo
 listo = cuerpo(m["html"], "ELEGIR")
 assert listo == "ELEGIR " + c["algunas"] + "\ntitulo: 2\nminiatura: 1"
-assert llega("marta@ejemplo.com", "Re: títulos", "El segundo título me parece el mejor de todos con diferencia", mid(m)) == "texto libre en una puerta que no lo admite: botones"
+assert llega("marta@ejemplo.com", "Re: títulos", "El segundo título me parece el mejor de todos con diferencia", mid(m)) == "elección sin entender: se vuelve a preguntar"
+assert HC.eleccion_en(PU.leer(g), "título 2, miniatura 1") == "titulo: 2\nminiatura: 1" and HC.eleccion_en(PU.leer(g), "recomendado") == "titulo: 2\nminiatura: 1"
 assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas"], listo) == f"decidida {g} (algunas)"                 # basta con enviarlo
 assert PU.leer(g)["decision"]["texto"] == "titulo: 2\nminiatura: 1"
 c2 = cod(g); assert llega("marta@ejemplo.com", "DESHACER " + c2["deshacer"], "DESHACER " + c2["deshacer"]) == f"deshecha {g}"
@@ -325,7 +350,7 @@ assert llega("dario@ejemplo.com", "", "") == "vacío"
 caso "tope: a partir de 20 correos sin código de una persona en un día, no se atienden más (los códigos, siempre)" '
 hechos = sum(1 for l in (B.home() / "correo/recibidos.jsonl").read_text().splitlines() if "mario@ejemplo.com" in l and "\"sin_codigo\": true" in l)
 for i in range(HC.TOPE_DIA - hechos):
-    assert llega("mario@ejemplo.com", "hola", f"hola {i}").startswith("ayuda"), i
+    assert llega("mario@ejemplo.com", "hola", f"hola {i}").startswith(("ayuda", "sin entender")), i
 n = len(enviados())
 assert llega("mario@ejemplo.com", "hola", "otra más") == "descartado: tope diario de correos sin código" and len(enviados()) == n
 eid, g = guion("Tope"); HC.enviar_puertas(); c = cod(g)
@@ -396,7 +421,9 @@ assert botones == {"ELEGIR " + c["algunas:A"]: "ELEGIR " + c["algunas:A"] + ": A
                    "RECHAZAR " + c["rechazo"]: "RECHAZAR " + c["rechazo"] + ": " + HC.AYUDA_MOTIVO}, botones
 assert h.index("Elegir A") < h.index("Elegir B") < h.index("Versión A · propia")                       # se decide antes de los guiones
 assert ("ELEGIR " + c["algunas:A"] + ": A") in t and len(h.encode()) < 100_000
-assert llega("marta@ejemplo.com", "Re: versión", "Me quedo con la B, la investigada, sin duda alguna", mid(m)) == "texto libre en una puerta que no lo admite: botones"
+assert llega("marta@ejemplo.com", "Re: versión", "Las dos me gustan bastante, no sé cuál elegir todavía", mid(m)) == "elección sin entender: se vuelve a preguntar"
+assert HC.eleccion_en(PU.leer(g), "Me quedo con la B, la investigada") == "B" and HC.eleccion_en(PU.leer(g), "la propia") == "A"
+assert HC.eleccion_en(PU.leer(g), "A o B, me da igual") == ""
 # el botón de B decide B (aunque lo enviado diga otra cosa detrás: manda el código)
 assert llega("marta@ejemplo.com", "ELEGIR " + c["algunas:B"], botones["ELEGIR " + c["algunas:B"]]) == f"decidida {g} (algunas)"
 p = PU.leer(g); assert p["decision"]["verbo"] == "algunas" and p["decision"]["texto"] == "B"

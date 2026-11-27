@@ -130,4 +130,14 @@ assert [(v["encargo"], v["estado_id"], v["puerta"]["tipo"]) for v in mios()] == 
 decide(g, "marta", "algunas", "B")
 assert [(v["encargo"], v["estado_id"], v["version"]) for v in mios()] == [(b, "revision", "investigada")], mios()
 '
+caso "sustituir una puerta: la vieja queda reemplazada, la nueva lleva la nota; con gemelos, otra vez una sola puerta de elegir" '
+f, (a, b) = gemelos("sustituir"); correr(a); g = correr(b)["puerta"]
+n = PU.reemplazar(g, "Te lo vuelvo a mandar corregido.")
+assert PU.leer(g)["estado"] == "reemplazada" and PU.leer(g)["sustituida_por"] == n["id"]
+assert n["tipo"] == "elegir-version" and n["nota"] == "Te lo vuelvo a mandar corregido." and enc(a)["puerta_id"] == enc(b)["puerta_id"] == n["id"]
+decide(n["id"], "marta", "algunas", "A"); r = abiertas(a)[0]
+m = PU.reemplazar(r["id"], "Corregido")
+assert m["tipo"] == "revision" and enc(a)["puerta_id"] == m["id"] and len(abiertas(a)) == 1
+assert rechaza(lambda: PU.reemplazar(r["id"]), "Solo se sustituye una puerta abierta")
+'
 exit $fail

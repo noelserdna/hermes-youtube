@@ -643,8 +643,23 @@ def t_datos(slug: str, d: Path, enc: dict) -> dict:
                 datos.append({"id": f"d{len(datos) + 1}", "n": x["n"], "dato": x.get("dicho") or x.get("cita"), "frase": "",
                               "motivo": "externo", "fuente": url or fuente, "versiones": [],
                               "estado": ya.get("estado", "pendiente"), "valor": ya.get("valor", "")})
+    # lo externo que el código ya comprobó (la cita está, literal, en una fuente que se volvió a abrir) no lo verifica
+    # una persona dato a dato: queda verificado por el código. Las contradicciones y lo no comprobado, sí.
+    comprobadas = {f.get("url") for f in inv.get("fuentes") or [] if f.get("comprobada") is True and f.get("url")}
+    web_ok = {f"web/{f.get('id')}" for f in inv.get("fuentes") or [] if f.get("comprobada") is True}
+    mat = {x.get("n"): str(x.get("fuente", "")) for x in (_json(d / "material.json", {}) or {}).get("material") or []}
+    auto = 0
+    for x in datos:
+        if x.get("estado") != "pendiente" or x.get("motivo") != "externo" or len(x.get("versiones") or []) > 1:
+            continue
+        marcas = [int(n) for n in re.findall(r"\[(\d+)\]", str(x.get("frase", "")))] + ([x["n"]] if isinstance(x.get("n"), int) else [])
+        por_url = any(u and u in str(x.get("fuente", "")) for u in comprobadas)
+        por_marca = bool(marcas) and all(mat.get(n) in web_ok for n in marcas)
+        if por_url or por_marca:
+            x.update(estado="verificado", verificado_por="código", nota="la cita está, tal cual, en la fuente enlazada, que se volvió a abrir")
+            auto += 1
     _guardar(d / "datos.json", {"datos": datos})
-    return {"resumen": f"{len(datos)} datos a verificar; {len(v.get('cambios') or [])} cambios pedidos"}
+    return {"resumen": f"{len(datos)} datos ({auto} verificados por el código); {len(v.get('cambios') or [])} cambios pedidos"}
 
 
 def capitulos(guion: str, caps: list, ppm: int) -> list:
@@ -742,6 +757,12 @@ def t_paquete(slug: str, d: Path, enc: dict) -> dict:
     cfg = C.leer(slug)
     r = R.reglas(cfg)
     guion = (d / "guion.md").read_text(encoding="utf-8")
+    # lo mecánico (cifras, signos que no se leen) lo arregla el código: una persona no gasta una ronda en un «;»
+    guion, arreglos = T.arreglar_lectura(guion)
+    if arreglos:
+        (d / "guion.md").write_text(guion, encoding="utf-8")
+        previos = (_json(d / "paquete.json", {}) or {}).get("arreglos") or []
+        arreglos = previos + [a for a in arreglos if a not in previos]
     m = T.medidas(guion, r["ppm"])
     el = _json(d / "eleccion.json", {}) or {}
     cierre = _json(d / "cierre.json", {}) or {}
@@ -762,6 +783,7 @@ def t_paquete(slug: str, d: Path, enc: dict) -> dict:
                   "frases": m["frases"], "media_frase": m["media"]},
         "datos": (_json(d / "datos.json", {}) or {}).get("datos") or [],
         "revision": {"nota": R.nota(avisos), "graves": sum(1 for a in avisos if a["grave"]), "avisos": avisos},
+        "arreglos": arreglos,
         "editor": {"veredicto": cierre.get("veredicto", ""), "notas": cierre.get("notas") or []},
         "riesgos": (_json(d / "retencion.json", {}) or {}).get("riesgos") or [],
         "ficheros": {"guion": "guion-limpio.txt", "guion_numerado": "guion-numerado.md", "descripcion": "descripcion.md"}})

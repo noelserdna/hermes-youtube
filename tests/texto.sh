@@ -71,4 +71,13 @@ assert T.leer_capitulos(d) == [(0, "Intro"), (30, "La regla"), (210, "Los fallos
 assert T.capitulos_validos(T.leer_capitulos(d), 800) == []
 assert len(T.capitulos_validos([(5, "A"), (9, "B")])) == 3
 assert T.capitulos_validos([(0, "A"), (30, "B"), (20, "C")])[0].startswith("los capítulos no van")'
+caso "arreglos de lectura: cifras y signos pasan a como se leen; cabeceras y marcas de cita no se tocan" '
+g = "## intro\nTiene 2 opciones; la primera es mejor.[3]\nEl 21 % (según la fuente) cuesta 70 €.\n## desarrollo-1\nHay 26.000 nodos, 2,5 millones y 1 vez.[12]"
+t, c = T.arreglar_lectura(g)
+assert t.splitlines() == ["## intro", "Tiene dos opciones. La primera es mejor.[3]", "El veintiuno por ciento, según la fuente, cuesta setenta euros.",
+                          "## desarrollo-1", "Hay veintiséis mil nodos, dos coma cinco millones y una vez.[12]"], t
+assert len(c) == 3 and c[0]["antes"].endswith("[3]") and T.no_se_lee(t) == [] and T.cifras_en_digitos(t) == []
+assert T.numero_en_letra(2024) == "dos mil veinticuatro" and T.numero_en_letra(21_000_000) == "veintiún millones"
+assert T.arreglar_lectura("Visita https://ejemplo.com hoy")[0] == "Visita https://ejemplo.com hoy"     # lo que no tiene lectura única, se queda
+assert T.arreglar_lectura(t) == (t, [])'
 exit $fail

@@ -645,6 +645,36 @@ def abrir_eleccion(slug: str, encs: list) -> dict:
     return puerta
 
 
+def reemplazar(gid: str, nota: str = "") -> dict:
+    """Sustituye una puerta abierta por otra igual, recién compuesta (revisión y contenido de hoy), con una `nota` que
+    se enseña arriba del correo. No decide nada: la vieja queda «reemplazada» y sus botones dejan de valer. Para quien
+    administra, cuando el sistema ha corregido algo después de enviarla."""
+    with B.cerrojo("puertas"):
+        vieja = leer(gid)
+        if vieja.get("estado") != "abierta":
+            raise Rechazo("Solo se sustituye una puerta abierta")
+        vieja.update(estado="reemplazada", reemplazada=B.ahora())
+        B.escribir(indice(gid), vieja)
+    slug, eid = vieja["canal"], vieja.get("encargo")
+    if vieja["tipo"] == "elegir-version":
+        nueva = abrir_eleccion(slug, [E.leer(slug, g["encargo"]) for g in vieja.get("gemelos") or []])
+    elif eid:
+        enc = E.leer(slug, eid)
+        enc["puerta_indice"] = vieja.get("indice") or 0
+        enc.pop("puerta_id", None)
+        E.guardar(slug, enc)
+        nueva = abrir(slug, eid)
+    else:
+        nueva = abrir(slug, None, vieja["tipo"], vieja.get("titulo", ""), vieja.get("texto", ""), vieja.get("al_aprobar", "nada"))
+    with B.cerrojo("puertas"):
+        nueva = {**leer(nueva["id"]), "nota": nota.strip(), "sustituye": gid, "repreguntas": 0}
+        B.escribir(indice(nueva["id"]), nueva)
+    vieja["sustituida_por"] = nueva["id"]
+    with B.cerrojo("puertas"):
+        B.escribir(indice(gid), vieja)
+    return nueva
+
+
 def _aplicar(puerta: dict, firma: str) -> str:
     """Ejecuta lo decidido. Devuelve una línea con el resultado."""
     dec = puerta["decision"]
@@ -792,6 +822,7 @@ def main(argv=None) -> int:
     dt = sub.add_parser("dato-local"); dt.add_argument("puerta"); dt.add_argument("dato"); dt.add_argument("estado")
     dt.add_argument("valor", nargs="?", default="")
     dh = sub.add_parser("deshacer"); dh.add_argument("puerta"); dh.add_argument("persona")
+    rz = sub.add_parser("reemplazar"); rz.add_argument("puerta"); rz.add_argument("nota", nargs="?", default="")
     sub.add_parser("firmar").add_argument("puerta")
     sub.add_parser("vencidas")
     x = ap.parse_args(argv)
@@ -811,6 +842,8 @@ def main(argv=None) -> int:
             p = leer(x.puerta)
             print(f"Dato {d.get('id')}: {d['estado']}" + (f" → {d['valor']}" if d.get("valor") else "")
                   + f" · quedan {datos_pendientes(p)} por verificar")
+        elif x.cmd == "reemplazar":
+            p = reemplazar(x.puerta, x.nota); print(f"{x.puerta} → {p['id']} ({p['tipo']})")
         elif x.cmd == "deshacer":
             deshacer(x.puerta, x.persona); print("deshecha")
         elif x.cmd == "firmar":

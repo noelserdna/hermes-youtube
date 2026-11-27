@@ -748,6 +748,15 @@ def _c_revision(p: dict, doc: Doc) -> None:
     _miniatura(doc, paq.get("miniatura"))
     doc.titulo(f"Revisión por código: nota {m['nota']}", "🧭")
     _avisos(doc, m["lista_avisos"])
+    arreglos = [a for a in paq.get("arreglos") or [] if isinstance(a, dict)]
+    if arreglos:
+        doc.titulo(f"Lo que el código corrigió solo para que se lea en voz alta ({len(arreglos)})", "🔧")
+        _cambios_editor(doc, [{"bloque": "", "frase": a.get("antes", ""), "quedaria": a.get("despues", ""),
+                               "motivo": "cifras y signos, escritos como se leen"} for a in arreglos[:30]])
+    auto = sum(1 for x in m["datos"] if x.get("verificado_por") == "código")
+    if auto:
+        doc.parrafo(f"🔎 {auto} dato(s) de fuera ya están verificados por el código: su cita está, tal cual, en la fuente "
+                    "enlazada, que se volvió a abrir. Solo quedan para ti los demás.")
     if m["cambios"]:
         doc.titulo(f"Cambios que propone el editor jefe ({len(m['cambios'])})", "✏️")
         _cambios_editor(doc, m["cambios"])
@@ -1182,6 +1191,11 @@ def componer(p: dict, cod: dict | None = None, previo: tuple = ()) -> dict:
 def _componer(p: dict, cod: dict | None, limite: int | None, previo: tuple = ()) -> dict:
     PU = _cargar("hyt_puertas")
     doc, cola, rec = Doc(limite), Doc(limite), {}
+    if not previo and p.get("nota"):   # la puerta sustituye a otra: qué ha cambiado, arriba y en grande
+        fondo, borde, color = SUAVE["bien"]
+        previo = (f"🔁 {p['nota']}", _tabla(f"<tr><td style='padding:14px 16px;color:{color};font-size:16px;line-height:1.5;"
+                                          f"font-weight:700'>🔁 {E_(p['nota'])}</td></tr>",
+                                          f"margin:10px 0 14px;background:{fondo};border:2px solid {borde};border-radius:12px"))
     if previo:   # (texto, html) que va delante de todo: por qué se vuelve a preguntar y cómo contestar
         doc.crudo(previo[1], previo[0])
     cab = " · ".join(x for x in (f"Puerta {int(p.get('indice') or 0) + 1} de {p.get('total')}" if int(p.get("total") or 1) > 1 and int(p.get("indice") or 0) >= 0 else "",

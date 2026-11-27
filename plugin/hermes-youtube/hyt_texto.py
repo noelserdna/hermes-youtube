@@ -338,3 +338,103 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# ── arreglos de lectura: lo mecánico que el código corrige solo antes de que lo vea una persona ─────────────────────
+_UNIDADES = ("cero uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince dieciséis "
+             "diecisiete dieciocho diecinueve veinte veintiuno veintidós veintitrés veinticuatro veinticinco veintiséis "
+             "veintisiete veintiocho veintinueve").split()
+_DECENAS = {3: "treinta", 4: "cuarenta", 5: "cincuenta", 6: "sesenta", 7: "setenta", 8: "ochenta", 9: "noventa"}
+_CENTENAS = {1: "ciento", 2: "doscientos", 3: "trescientos", 4: "cuatrocientos", 5: "quinientos", 6: "seiscientos",
+             7: "setecientos", 8: "ochocientos", 9: "novecientos"}
+
+
+def _hasta_mil(n: int) -> str:
+    if n < 30:
+        return _UNIDADES[n]
+    if n < 100:
+        d, u = divmod(n, 10)
+        return _DECENAS[d] + (f" y {_UNIDADES[u]}" if u else "")
+    if n == 100:
+        return "cien"
+    c, r = divmod(n, 100)
+    return _CENTENAS[c] + (f" {_hasta_mil(r)}" if r else "")
+
+
+def numero_en_letra(n: int) -> str:
+    """Un entero (0 a 999.999.999.999) como se lee en español: «veintiséis millones», «dos mil veinticuatro»."""
+    if n < 1000:
+        return _hasta_mil(n)
+    if n < 1_000_000:
+        m, r = divmod(n, 1000)
+        return ("mil" if m == 1 else f"{_apocope(_hasta_mil(m))} mil") + (f" {_hasta_mil(r)}" if r else "")
+    if n < 1_000_000_000_000:
+        m, r = divmod(n, 1_000_000)
+        cab = "un millón" if m == 1 else f"{_apocope(numero_en_letra(m))} millones"
+        return cab + (f" {numero_en_letra(r)}" if r else "")
+    return str(n)
+
+
+def _apocope(t: str) -> str:
+    """Delante de un sustantivo: «uno» → «un», «veintiuno» → «veintiún»."""
+    if t.endswith("veintiuno"):
+        return t[:-len("veintiuno")] + "veintiún"
+    if t == "uno" or t.endswith(" uno"):
+        return t[:-3] + "un"
+    return t
+
+
+_NO_APOCOPE = set("""y o u e por de del a al en es son era fue que se no ya como cada entre para sin con sobre tras más menos
+también tampoco solo sólo después antes hasta desde ni pero porque si""".split()) 
+_FEM = ("a", "as", "ión", "iones", "dad", "dades", "tud", "tudes", "vez", "veces", "sis")
+_MASC_A = set("día días mapa mapas problema problemas sistema sistemas programa programas tema temas idioma idiomas clima "
+              "planeta planetas esquema esquemas token tokens".split())
+
+
+def _cifra(m) -> str:
+    entero, dec, siguiente = m.group(1), m.group(2), m.group(3) or ""
+    t = numero_en_letra(int(entero.replace(".", "")))
+    if dec:
+        t += " coma " + (numero_en_letra(int(dec)) if len(dec) <= 2 and not dec.startswith("0")
+                         else " ".join(_UNIDADES[int(c)] for c in dec))
+    else:
+        w = siguiente.strip().lower()
+        if w and w[0].isalpha() and w not in _NO_APOCOPE:   # «un millón», «veintiún años», «una vez»; no «ciento un también»
+            if w.endswith(_FEM) and w not in _MASC_A and (t == "uno" or t.endswith(("uno", " uno"))):
+                t = t[:-1] + "a"
+            else:
+                t = _apocope(t)
+    return t + siguiente
+
+
+def arreglar_lectura(texto: str) -> tuple:
+    """(texto, cambios): pasa a letra lo que un guion no puede llevar para leerse en voz alta y que tiene una forma
+    única de leerse: cifras («2» → «dos», «2,5» → «dos coma cinco», «26.000» → «veintiséis mil»), «%» y «€» detrás
+    de una cifra, «&», «+» y «=» sueltos, punto y coma (→ punto) y paréntesis (→ comas). Respeta cabeceras y marcas de
+    cita [n]. Lo que no tiene una lectura única (una URL, una barra) se queda: lo sigue marcando la revisión."""
+    cambios, out = [], []
+    for linea in texto.split("\n"):
+        if re.match(r"^\s*#{1,6}\s", linea) or not linea.strip():
+            out.append(linea)
+            continue
+        marcas = []
+
+        def guardar(m):
+            marcas.append(m.group(0))
+            return f"\x00{len(marcas) - 1}\x00"
+        nueva = re.sub(r"\s*\[\d+\]", guardar, linea)
+        antes = nueva
+        nueva = re.sub(r"(\d[\d.,]*)\s*%", r"\1 por ciento", nueva)
+        nueva = re.sub(r"(\d[\d.,]*)\s*€", r"\1 euros", nueva)
+        nueva = re.sub(r"\s&\s", " y ", nueva)
+        nueva = re.sub(r"\s\+\s", " más ", nueva)
+        nueva = re.sub(r"\s=\s", " igual a ", nueva)
+        nueva = re.sub(r"\s*\(([^()\x00]{1,200})\)", r", \1,", nueva)
+        nueva = re.sub(r",\s*([.,;:?!])", r"\1", nueva)
+        nueva = re.sub(r";\s*(\w)", lambda m: ". " + m.group(1).upper(), nueva)
+        nueva = re.sub(r"(?<![\w\x00])(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d+))?(?![\d\x00])(\s+\w+)?", _cifra, nueva)
+        if nueva != antes:
+            cambios.append({"antes": re.sub(r"\x00(\d+)\x00", lambda m: marcas[int(m.group(1))], antes).strip(),
+                            "despues": re.sub(r"\x00(\d+)\x00", lambda m: marcas[int(m.group(1))], nueva).strip()})
+        out.append(re.sub(r"\x00(\d+)\x00", lambda m: marcas[int(m.group(1))], nueva))
+    return "\n".join(out), cambios

@@ -204,6 +204,26 @@ deja("verificacion.json", {"cambios": [], "datos": []})
 S.t_datos("cocina", d, {}); x = lee("datos.json")["datos"]
 assert [(y["n"], y["fuente"], y["motivo"]) for y in x] == [(2, "https://doc.ejemplo.org/tx", "externo")], x
 S.t_datos("cocina", d, {}); assert len(lee("datos.json")["datos"]) == 1'
+caso "verificado por el código: lo externo con la cita comprobada en su fuente; las contradicciones y lo no comprobado, para una persona" '
+deja("investigacion.json", {"fuentes": [{"id": "w1", "url": "https://doc.ejemplo.org/ok", "comprobada": True},
+                                        {"id": "w2", "url": "https://doc.ejemplo.org/no", "comprobada": None}], "hallazgos": []})
+deja("material.json", {"material": [{"n": 1, "fuente": "web/w1", "dicho": "uno"}, {"n": 2, "fuente": "web/w2", "dicho": "dos"}]})
+deja("guion.md", "## intro\nUno.[1] Dos.[2]\n")
+deja("verificacion.json", {"cambios": [], "datos": [
+    {"dato": "por enlace", "frase": "algo", "motivo": "externo", "fuente": "https://doc.ejemplo.org/ok"},
+    {"dato": "por marca", "frase": "Uno.[1]", "motivo": "externo", "fuente": "un sitio"},
+    {"dato": "sin comprobar", "frase": "Dos.[2]", "motivo": "externo", "fuente": "https://doc.ejemplo.org/no"},
+    {"dato": "contradicción", "frase": "Uno.[1]", "motivo": "contradiccion", "fuente": "https://doc.ejemplo.org/ok", "versiones": ["a", "b"]}]})
+r = S.t_datos("cocina", d, {}); x = {y["dato"]: y for y in lee("datos.json")["datos"]}
+assert [x[k]["estado"] for k in ("por enlace", "por marca", "sin comprobar", "contradicción")] == ["verificado", "verificado", "pendiente", "pendiente"], x
+assert x["por enlace"]["verificado_por"] == "código" and "verificados por el código" in r["resumen"], r'
+caso "paquete: el código arregla solo las cifras y los signos antes de la revisión, y lo apunta" '
+deja("guion.md", "## intro\nEl arroz no se pasa por el tiempo. Se pasa por el agua; son 2 tazas.\n## cierre\nEso es el agua.\n")
+deja("eleccion.json", {"titulo": "x"}); deja("cierre.json", {}); deja("material.json", {"material": [{"n": 1}, {"n": 2}]})
+S.t_paquete("cocina", d, {}); p = lee("paquete.json"); g = (d / "guion.md").read_text()
+assert "agua. Son dos tazas." in g, g
+assert p["arreglos"] and p["arreglos"][0]["despues"].endswith("Son dos tazas.")
+assert not any(a["texto"].startswith(("lleva cosas", "cifras en dígitos")) for a in p["revision"]["avisos"]), p["revision"]'
 caso "paquete: guion limpio para el teleprompter, guion numerado y la nota de la revisión" "
 deja('guion.md', '''$GUION''')
 deja('eleccion.json', {'titulo': 'Arroz suelto: la regla del agua', 'miniatura': {'texto': '100 ML'}, 'promesa': 'x', 'palabras_clave': ['arroz']})
